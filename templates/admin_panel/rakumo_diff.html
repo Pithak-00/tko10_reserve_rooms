@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rakumo差分確認 | 会議室予約システム</title>
+  {% load static %}
+  <link rel="icon" type="image/webp" href="{% static 'image/bold-logo.webp' %}">
+  <link rel="stylesheet" href="{% static 'css/common.css' %}">
+  <link rel="stylesheet" href="{% static 'css/admin_reservation_list.css' %}">
+  <style>
+    .diff-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .diff-card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #2d3748;
+      margin: 0 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .summary-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .summary-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 24px;
+      border-radius: 8px;
+      min-width: 120px;
+      font-size: 13px;
+    }
+    .chip-matched  { background: #c6f6d5; color: #276749; }
+    .chip-rakumo   { background: #feebc8; color: #7b341e; }
+    .chip-local    { background: #bee3f8; color: #2c5282; }
+    .summary-chip .count { font-size: 28px; font-weight: 800; line-height: 1.2; }
+    .diff-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .diff-table th {
+      background: #f7fafc;
+      padding: 10px 14px;
+      text-align: left;
+      color: #4a5568;
+      border-bottom: 2px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    .diff-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #edf2f7;
+      vertical-align: middle;
+    }
+    .diff-table tr:hover { background: #f7fafc; }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .tag-rakumo { background: #feebc8; color: #7b341e; }
+    .tag-local  { background: #bee3f8; color: #2c5282; }
+    .tag-match  { background: #c6f6d5; color: #276749; }
+    .tag-allday { background: #e9d8fd; color: #553c9a; }
+    .empty-msg {
+      text-align: center;
+      color: #a0aec0;
+      padding: 20px;
+      font-size: 13px;
+    }
+    .filter-card { margin-bottom: 20px; }
+    .filter-grid {
+      display: grid;
+      grid-template-columns: auto 1fr auto 1fr auto 1fr;
+      gap: 10px 16px;
+      align-items: center;
+    }
+    .filter-label { font-size: 13px; color: #4a5568; white-space: nowrap; }
+    .filter-input select, .filter-input input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e0;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .nav-links {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .nav-link-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid #3182ce;
+      color: #3182ce;
+      background: #fff;
+    }
+    .nav-link-btn.active { background: #3182ce; color: #fff; }
+    .nav-link-btn:hover:not(.active) { background: #ebf8ff; }
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin: 0 0 10px;
+      padding: 6px 12px;
+      border-radius: 4px;
+    }
+    .st-rakumo { background: #feebc8; color: #7b341e; }
+    .st-local   { background: #bee3f8; color: #2c5282; }
+    .st-match   { background: #c6f6d5; color: #276749; }
+  </style>
+</head>
+<body>
+  <!-- ヘッダー -->
+  <div class="logo between">
+    <div class="header-logo">
+      <a href="/"><img src="{% static 'image/bold-logo.webp' %}" alt="logo"></a>
+      <span>社内会議室予約システム：Rakumo差分確認</span>
+    </div>
+    <div class="top-links">
+      <a href="{% url 'reservation_timeline' %}">会議室の一覧</a>
+      <span class="sep">｜</span>
+      <a href="{% url 'calendar' %}">カレンダー</a>
+      <span class="sep">｜</span>
+      <a href="{% url 'my_reservations' %}">自分の予約</a>
+      <span class="sep">｜</span>
+      <span class="header-username">{{ request.user.name }}さん</span>
+      <form method="post" action="{% url 'logout' %}" class="logout-form">
+        {% csrf_token %}
+        <button type="submit" class="logout-btn-tab">ログアウト</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="calendar-container">
+    <div class="calendar-toolbar">
+      <div class="toolbar-left">
+        <span class="page-title">Rakumo差分確認</span>
+      </div>
+    </div>
+
+    <!-- ページナビ -->
+    <div class="nav-links">
+      <a href="{% url 'rakumo_sync' %}" class="nav-link-btn">① カレンダーID設定</a>
+      <a href="{% url 'rakumo_diff' %}" class="nav-link-btn active">② 差分確認</a>
+    </div>
+
+    {% if messages %}
+      {% for msg in messages %}
+        <div style="margin-bottom:16px; padding:12px 16px; border-radius:6px;
+          background:{% if 'success' in msg.tags %}#c6f6d5{% else %}#fed7d7{% endif %};
+          color:{% if 'success' in msg.tags %}#276749{% else %}#9b2c2c{% endif %}; font-size:13px;">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    <!-- 検索フォーム -->
+    <div class="diff-card filter-card">
+      <h2 style="margin-bottom:14px;">比較条件</h2>
+      <form method="post">
+        {% csrf_token %}
+        <div class="filter-grid">
+          <div class="filter-label">会議室</div>
+          <div class="filter-input">
+            <select name="room_id" required>
+              <option value="">選択してください</option>
+              {% for r in rooms %}
+                <option value="{{ r.pk }}" {% if selected_room_id == r.pk %}selected{% endif %}>
+                  {{ r.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="filter-label">開始日</div>
+          <div class="filter-input">
+            <input type="date" name="date_from" value="{{ date_from }}" required>
+          </div>
+          <div class="filter-label">終了日</div>
+          <div class="filter-input">
+            <input type="date" name="date_to" value="{{ date_to }}" required>
+          </div>
+        </div>
+
+        {% if not rooms %}
+          <p style="margin-top:14px; font-size:13px; color:#e53e3e;">
+            ⚠ Google カレンダーIDが設定済みの会議室がありません。
+            <a href="{% url 'rakumo_sync' %}" style="color:#3182ce;">① カレンダーID設定</a> から先に設定してください。
+          </p>
+        {% endif %}
+
+        <div style="margin-top:16px; display:flex; gap:10px;">
+          <button type="submit" class="btn btn-primary btn-md" {% if not rooms %}disabled{% endif %}>
+            差分を確認する
+          </button>
+          <a href="{% url 'rakumo_diff' %}" class="btn btn-light btn-md">クリア</a>
+        </div>
+      </form>
+    </div>
+
+    {% if has_result %}
+    <!-- サマリー -->
+    <div class="diff-card">
+      <h2>📊 比較結果サマリー — {{ room.name }}（{{ date_from }} 〜 {{ date_to }}）</h2>
+      <div class="summary-row">
+        <div class="summary-chip chip-matched">
+          <span class="count">{{ diff.matched|length }}</span>
+          <span>一致（両方に存在）</span>
+        </div>
+        <div class="summary-chip chip-rakumo">
+          <span class="count">{{ diff.only_in_rakumo|length }}</span>
+          <span>Rakumoのみ</span>
+        </div>
+        <div class="summary-chip chip-local">
+          <span class="count">{{ diff.only_in_local|length }}</span>
+          <span>このシステムのみ</span>
+        </div>
+      </div>
+
+      {% if diff.only_in_rakumo or diff.only_in_local %}
+        <p style="font-size:13px; color:#c05621; font-weight:600;">
+          ⚠ 差分が検出されました。以下の予約を確認してください。
+        </p>
+      {% else %}
+        <p style="font-size:13px; color:#276749; font-weight:600;">
+          ✓ 差分なし。Rakumoとこのシステムのデータはすべてマッチしています。
+        </p>
+      {% endif %}
+    </div>
+
+    <!-- Rakumoのみ -->
+    {% if diff.only_in_rakumo %}
+    <div class="diff-card">
+      <h2><span class="section-title st-rakumo">Rakumoにのみ存在する予約（このシステムに未登録）</span></h2>
+      <table class="diff-table">
+        <thead>
+          <tr>
+            <th>日時</th>
+            <th>件名</th>
+            <th>登録者（オーガナイザー）</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in diff.only_in_rakumo %}
+          <tr>
+            <td style="white-space:nowrap;">
+              {% if e.is_all_day %}
+                {{ e.start|date:"Y/m/d" }} <span class="tag tag-allday">終日</span>
+              {% else %}
+                {{ e.start|date:"Y/m/d" }}&nbsp;{{ e.start|time:"H:i" }}〜{{ e.end|time:"H:i" }}
+              {% endif %}
+            </td>
+            <td>{{ e.title }}</td>
+            <td>{{ e.organizer|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- このシステムのみ -->
+    {% if diff.only_in_local %}
+    <div class="diff-card">
+      <h2><span class="section-title st-local">このシステムにのみ存在する予約（Rakumo未反映）</span></h2>
+      <table class="diff-table">
+        <thead>
+          <tr>
+            <th>日時</th>
+            <th>件名</th>
+            <th>予約者</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in diff.only_in_local %}
+          <tr>
+            <td style="white-space:nowrap;">
+              {% if e.is_all_day %}
+                {{ e.start|date:"Y/m/d" }} <span class="tag tag-allday">終日</span>
+              {% else %}
+                {{ e.start|date:"Y/m/d" }}&nbsp;{{ e.start|time:"H:i" }}〜{{ e.end|time:"H:i" }}
+              {% endif %}
+            </td>
+            <td>{{ e.title }}</td>
+            <td>{{ e.organizer|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- 一致した予約 -->
+    {% if diff.matched %}
+    <div class="diff-card">
+      <h2><span class="section-title st-match">両方に存在する予約（一致）</span></h2>
+      <table class="diff-table">
+        <thead>
+          <tr>
+            <th>日時</th>
+            <th>件名</th>
+            <th>登録者</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in diff.matched %}
+          <tr>
+            <td style="white-space:nowrap;">
+              {% if e.is_all_day %}
+                {{ e.start|date:"Y/m/d" }} <span class="tag tag-allday">終日</span>
+              {% else %}
+                {{ e.start|date:"Y/m/d" }}&nbsp;{{ e.start|time:"H:i" }}〜{{ e.end|time:"H:i" }}
+              {% endif %}
+            </td>
+            <td>{{ e.title }}</td>
+            <td>{{ e.organizer|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% endif %}{# has_result #}
+  </div>
+</body>
+</html>

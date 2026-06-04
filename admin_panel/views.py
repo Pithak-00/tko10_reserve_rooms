@@ -1,6 +1,8 @@
 import csv
 import io
+import json
 import logging
+from datetime import date, datetime, timedelta
 
 from django.contrib import messages
 from django.db import transaction
@@ -12,8 +14,7 @@ from django.urls import reverse_lazy, reverse
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.db.models import Count
-from django.http import HttpResponseForbidden
-from datetime import date
+from django.http import HttpResponseForbidden, JsonResponse
 
 from reservations.models import Room, Reservation, Building, Facility, OperationLog
 from reservations.forms import ReservationFilterForm
@@ -827,3 +828,122 @@ class OperationLogView(StaffRequiredMixin, View):
             'q_user':      user_q,
             'q_room':      room_q,
         })
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Rakumo連携: Step 1 – API接続テスト＆差分確認
+# ──────────────────────────────────────────────────────────────────────────────
+
+class RakumoSyncView(StaffRequiredMixin, View):
+    """
+    Rakumo（Google カレンダー リソース）連携管理ページ。
+
+    GET : 会議室一覧 + 各室の google_calendar_id 表示
+    POST: google_calendar_id の一括保存
+    """
+    template_name = 'admin_panel/rakumo_sync.html'
+
+    def get(self, request):
+        rooms = Room.objects.filter(is_active=True).order_by('name')
+        return render(request, self.template_name, {'rooms': rooms})
+
+    def post(self, request):
+        rooms = Room.objects.filter(is_active=True)
+        updated = 0
+        for room in rooms:
+            key = f'cal_id_{room.pk}'
+            cal_id = request.POST.get(key, '').strip()
+            if room.google_calendar_id != cal_id:
+                room.google_calendar_id = cal_id
+                room.save(update_fields=['google_calendar_id'])
+                updated += 1
+        messages.success(request, f'Google カレンダーID を保存しました（{updated}件更新）。')
+        return redirect('rakumo_sync')
+
+
+class RakumoTestConnectionView(StaffRequiredMixin, View):
+    """
+    AJAX: 特定会議室の Google カレンダーへの接続テスト。
+    POST body: { room_id: int }
+    """
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            room_id = int(data.get('room_id', 0))
+        except Exception:
+            return JsonResponse({'success': False, 'error': 'リクエストが不正です。'}, status=400)
+
+        room = get_object_or_404(Room, pk=room_id)
+        if not room.google_calendar_id:
+            return JsonResponse({'success': False, 'error': 'Google カレンダーIDが設定されていません。'})
+
+        from reservations.services.rakumo_sync import RakumoSyncService
+        svc = RakumoSyncService(request.user)
+        result = svc.test_connection(room.google_calendar_id)
+        return JsonResponse(result)
+
+
+class RakumoDiffView(StaffRequiredMixin, View):
+    """
+    Rakumo側と今回のシステムの予約差分を確認するページ。
+
+    GET : フォーム表示（会議室・日付選択）
+    POST: 差分結果を表示
+    """
+    template_name = 'admin_panel/rakumo_diff.html'
+
+    def get(self, request):
+        rooms = Room.objects.filter(is_active=True, google_calendar_id__gt='').order_by('name')
+        today = timezone.localdate()
+        return render(request, self.template_name, {
+            'rooms':      rooms,
+            'date_from':  today.isoformat(),
+            'date_to':    (today + timedelta(days=7)).isoformat(),
+        })
+
+    def post(self, request):
+        rooms = Room.objects.filter(is_active=True, google_calendar_id__gt='').order_by('name')
+        room_id    = request.POST.get('room_id')
+        date_from_str = request.POST.get('date_from')
+        date_to_str   = request.POST.get('date_to')
+
+        context = {
+            'rooms':      rooms,
+            'date_from':  date_from_str,
+            'date_to':    date_to_str,
+            'selected_room_id': int(room_id) if room_id else None,
+        }
+
+        if not room_id or not date_from_str or not date_to_str:
+            messages.error(request, '会議室・期間をすべて選択してください。')
+            return render(request, self.template_name, context)
+
+        room = get_object_or_404(Room, pk=room_id)
+
+        try:
+            import pytz
+            jst = pytz.timezone('Asia/Tokyo')
+            dt_from = jst.localize(datetime.fromisoformat(date_from_str))
+            dt_to   = jst.localize(datetime.fromisoformat(date_to_str) + timedelta(days=1))
+        except Exception:
+            messages.error(request, '日付の形式が正しくありません。')
+            return render(request, self.template_name, context)
+
+        from reservations.services.rakumo_sync import RakumoSyncService
+        svc = RakumoSyncService(request.user)
+
+        if svc.no_op:
+            messages.error(request, svc.error_message or 'Google アカウントが連携されていません。')
+            return render(request, self.template_name, context)
+
+        diff = svc.compare_with_local(room, dt_from, dt_to)
+
+        if diff.get('error'):
+            messages.error(request, diff['error'])
+            return render(request, self.template_name, context)
+
+        context.update({
+            'room':           room,
+            'diff':           diff,
+            'has_result':     True,
+        })
+        return render(request, self.template_name, context)

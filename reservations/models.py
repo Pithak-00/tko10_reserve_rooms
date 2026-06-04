@@ -61,6 +61,13 @@ class Room(models.Model):
     floor = models.IntegerField(null=True, blank=True, verbose_name="階数")
     is_active = models.BooleanField(default=True, verbose_name="利用可能")
 
+    # Rakumo連携: Google Workspace リソースカレンダー ID
+    google_calendar_id = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name="Google カレンダーID（Rakumo会議室）",
+        help_text="例: xxxxx@resource.calendar.google.com"
+    )
+
     # T-06 room_facilities を経由した設備との M2N
     facilities = models.ManyToManyField(
         Facility,
