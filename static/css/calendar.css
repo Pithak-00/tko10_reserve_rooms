@@ -151,42 +151,44 @@
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding: 11px 20px;
-  background: none;
+  padding: 8px 12px;
+  background: #F7FAFC;
   border: none;
+  border-top: 1px solid #E2E8F0;
+  border-bottom: 1px solid #E2E8F0;
   cursor: pointer;
-  color: #333;
-  font-size: 14px;
+  color: #4A5568;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
   text-align: left;
   font-family: "Segoe UI", sans-serif;
   box-sizing: border-box;
 }
 
+.nav-submenu-trigger:hover {
+  background: #EDF2F7;
+}
+
 .nav-submenu {
   display: none;
-  position: absolute;
-  top: 0;
-  right: 100%;
-  margin-right: 8px;
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  min-width: 160px;
 }
 
 .nav-submenu.open {
   display: block;
+  border-top: 1px solid #E2E8F0;
 }
 
 .nav-submenu a {
   display: block;
-  padding: 11px 20px;
-  color: #2c7a9b;
+  padding: 8px 20px;
+  color: #333;
   text-decoration: none;
+  font-size: 14px;
 }
 
 .nav-submenu a:hover {
-  background-color: #edf4ff;
+  background-color: #f4f6f9;
 }
 
 /* ===== カレンダー ===== */

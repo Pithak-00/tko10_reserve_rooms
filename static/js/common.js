@@ -3,6 +3,34 @@
    全ページ共通スクリプト
    ===================================================== */
 
+/* ── ハンバーガーメニュー開閉 ── */
+function toggleNav() {
+  const nav = document.getElementById('globalNav');
+  if (nav) nav.classList.toggle('nav-open');
+}
+
+/* ── 管理メニュードロップダウン開閉 ── */
+function toggleAdminMenu(e) {
+  e.stopPropagation();
+  const dropdown = document.getElementById('adminMenuDropdown');
+  const arrow = e.currentTarget.querySelector('.admin-menu-arrow');
+  if (dropdown) dropdown.classList.toggle('open');
+  if (arrow) arrow.classList.toggle('expanded');
+}
+
+document.addEventListener('click', function (e) {
+  if (!e.target.closest('.nav-toggle') && !e.target.closest('#globalNav')) {
+    const nav = document.getElementById('globalNav');
+    if (nav) nav.classList.remove('nav-open');
+  }
+  if (!e.target.closest('.admin-menu-wrapper')) {
+    const dropdown = document.getElementById('adminMenuDropdown');
+    if (dropdown) dropdown.classList.remove('open');
+    const arrow = document.querySelector('.admin-menu-arrow');
+    if (arrow) arrow.classList.remove('expanded');
+  }
+});
+
 /* ── トースト自動非表示 ── */
 document.addEventListener("DOMContentLoaded", function () {
   const toast = document.querySelector(".toast.show");
@@ -213,7 +241,7 @@ function toggleNavMenu(e) {
 function toggleAdminSubmenu(e) {
   e.stopPropagation();
   document.getElementById("adminSubmenu")?.classList.toggle("open");
-  document.getElementById("adminArrow")?.classList.toggle("open");
+  document.getElementById("adminArrow")?.classList.toggle("expanded");
 }
 
 // メニュー外クリックで閉じる
