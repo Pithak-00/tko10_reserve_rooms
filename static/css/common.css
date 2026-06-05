@@ -29,7 +29,7 @@ body {
   height: 40px;
 }
 
-.logo span {
+.header-logo span {
   font-size: 20px;
   color: #666;
 }
@@ -75,6 +75,82 @@ body {
 
 .top-links .sep {
   color: #ccc;
+}
+
+/* ── ハンバーガーボタン（PCでは非表示） ── */
+.nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #555;
+  padding: 4px 8px;
+}
+
+/* ── 管理メニュードロップダウン（PC） ── */
+.admin-menu-wrapper {
+  position: relative;
+}
+
+.admin-menu-toggle {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 14px;
+  font-family: "Segoe UI", sans-serif;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.admin-menu-toggle:hover {
+  color: #333;
+  text-decoration: underline;
+}
+
+.admin-menu-arrow {
+  font-size: 11px;
+  display: inline-block;
+  transform: rotate(-90deg);
+  transition: transform 0.18s ease;
+  margin-left: 4px;
+}
+.admin-menu-arrow.expanded {
+  transform: rotate(0deg);
+}
+
+.admin-menu-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 0;
+  z-index: 300;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  min-width: 140px;
+  flex-direction: column;
+}
+
+.admin-menu-dropdown.open {
+  display: flex;
+}
+
+.admin-menu-dropdown a {
+  padding: 8px 16px;
+  color: #555;
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.admin-menu-dropdown a:hover {
+  background: #f0f4f8;
+  color: #333;
 }
 
 .header-username {
@@ -432,18 +508,103 @@ body {
   background-color: #fdf2f2;
 }
 
-  /* ── モバイル（max-width: 767px） — ロゴ・ヘッダー ── */							
-  @media (max-width: 767px) {							
-    .logo {							
-      padding: 12px 16px 8px;							
-    }							
-    .logo span {							
-      font-size: 14px;							
-      display: none;							
-    }							
-    .header-logo img {							
-      height: 32px;							
-    }							
+  /* ── モバイル（max-width: 767px） — ロゴ・ヘッダー ── */
+  @media (max-width: 767px) {
+    .logo {
+      padding: 12px 16px 8px;
+      position: relative;
+    }
+    .header-logo span {
+      display: none;
+    }
+    .header-logo img {
+      height: 32px;
+    }
+    /* ハンバーガーボタン表示 */
+    .nav-toggle {
+      display: block;
+    }
+    /* ナビドロップダウン */
+    .top-links {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 12px 0;
+      gap: 0;
+      z-index: 200;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+      min-width: 200px;
+    }
+    .top-links.nav-open {
+      display: flex;
+    }
+    .top-links > a,
+    .top-links > span.header-username,
+    .top-links > .logout-form {
+      padding: 0 16px;
+    }
+    .top-links .sep {
+      display: none;
+    }
+    .logout-btn-tab {
+      min-height: 44px;
+      width: 100%;
+      justify-content: center;
+      margin-top: 4px;
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+    }
+    /* SP: admin-menu-wrapper を full 幅に */
+    .admin-menu-wrapper {
+      width: 100%;
+      margin: 0;
+      border-top: 1px solid #E2E8F0;
+      border-bottom: 1px solid #E2E8F0;
+    }
+    /* SP: filter-section-header と完全に同じ見た目 */
+    .top-links .admin-menu-toggle {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      min-height: 36px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #4A5568;
+      background: #F7FAFC;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+      user-select: none;
+      letter-spacing: 0.3px;
+      white-space: normal;
+      box-sizing: border-box;
+    }
+    .top-links .admin-menu-toggle:hover {
+      background: #EDF2F7;
+      text-decoration: none;
+      color: #4A5568;
+    }
+    /* SP: 管理メニュードロップダウンをインライン展開 */
+    .top-links .admin-menu-dropdown.open {
+      position: static;
+      box-shadow: none;
+      border: none;
+      border-top: 1px solid #E2E8F0;
+      padding: 8px 16px;
+      gap: 10px;
+    }
+    .top-links .admin-menu-dropdown.open a {
+      padding: 0;
+    }
   }							
 
     /* ── モバイル（max-width: 767px） — カレンダーコンテナ・モーダル・ボタン ── */							

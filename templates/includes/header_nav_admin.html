@@ -1,0 +1,32 @@
+{% load static %}
+<button class="nav-toggle" aria-label="メニューを開く" onclick="toggleNav()">&#9776;</button>
+<div class="top-links" id="globalNav">
+  <a href="{% url 'reservation_timeline' %}">会議室の一覧</a>
+  <span class="sep">｜</span>
+  <a href="{% url 'calendar' %}">カレンダー</a>
+  <span class="sep">｜</span>
+  <a href="{% url 'my_reservations' %}">自分の予約</a>
+  <span class="sep">｜</span>
+
+  <!-- PC: 管理メニュードロップダウン / SP: フラット表示 -->
+  <div class="admin-menu-wrapper">
+    <button class="admin-menu-toggle" onclick="toggleAdminMenu(event)">
+      <span>管理メニュー</span><span class="admin-menu-arrow">▾</span>
+    </button>
+    <div class="admin-menu-dropdown" id="adminMenuDropdown">
+      <a href="{% url 'user_admin_list' %}">ユーザー管理</a>
+      <a href="{% url 'room_admin_list' %}">会議室管理</a>
+      <a href="{% url 'facility_list' %}">設備管理</a>
+      <a href="{% url 'building_list' %}">建物管理</a>
+      <a href="{% url 'department_list' %}">所属管理</a>
+      <a href="{% url 'all_reservation_list' %}">全予約管理</a>
+    </div>
+  </div>
+
+  <span class="sep">｜</span>
+  <span class="header-username">{{ request.user.name }}さん</span>
+  <form method="post" action="{% url 'logout' %}" class="logout-form">
+    {% csrf_token %}
+    <button type="submit" class="logout-btn-tab">ログアウト</button>
+  </form>
+</div>

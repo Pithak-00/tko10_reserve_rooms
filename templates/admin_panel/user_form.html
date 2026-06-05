@@ -10,29 +10,14 @@
     <link rel="stylesheet" href="{% static 'css/room_admin.css' %}" />
   </head>
   <body>
-    <div class="logo">
-      <div style="display: flex; align-items: center; gap: 15px">
+    <div class="logo between">
+      <div class="header-logo">
         <a href="/">
           <img src="{% static 'image/bold-logo.webp' %}" alt="logo" />
         </a>
         <span>社内会議室予約システム：ユーザー管理</span>
       </div>
-      <div class="top-links">
-        <a href="{% url 'reservation_timeline' %}">会議室の一覧</a>
-        <span class="sep">｜</span>
-        <a href="{% url 'calendar' %}">カレンダー</a>
-        <span class="sep">｜</span>
-        <a href="{% url 'my_reservations' %}">自分の予約</a>
-        <span class="sep">｜</span>
-        <span class="header-username">{{ request.user.name }}さん</span>
-        <form method="post"
-              action="{% url 'logout' %}"
-              style="margin: 0;
-                     padding: 0">
-          {% csrf_token %}
-          <button type="submit" class="logout-btn-tab">ログアウト</button>
-        </form>
-      </div>
+      {% include 'includes/header_nav_admin.html' %}
     </div>
     <div class="calendar-container">
       <div class="calendar-toolbar">
@@ -107,5 +92,6 @@
         </div>
       </div>
     </div>
+    <script src="{% static 'js/common.js' %}"></script>
   </body>
 </html>
