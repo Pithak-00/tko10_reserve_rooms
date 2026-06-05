@@ -42,7 +42,9 @@ function closeModalOnOverlay(e) {
 document.addEventListener('DOMContentLoaded', function () {
   const el = document.getElementById('fullcalendar');
   const rooms = JSON.parse(el.dataset.rooms || '[]');
-  const fcView = el.dataset.fcView || 'timeGridWeek';
+  //　↓コメントアウト。日次表示の設定を追加　20260605
+  //const fcView = el.dataset.fcView || 'timeGridWeek';
+  const fcView =window.innerWidth <= 768 ? 'timeGridDay' : (el.dataset.fcView || 'timeGridWeek');
   const _now = new Date();
   const initialDate = el.dataset.date ||
     `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
