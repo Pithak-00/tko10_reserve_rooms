@@ -1,0 +1,15 @@
+{% load static %}
+<button class="nav-toggle" aria-label="メニューを開く" onclick="toggleNav()">&#9776;</button>
+<div class="top-links" id="globalNav">
+  <a href="{% url 'reservation_timeline' %}">会議室の一覧</a>
+  <span class="sep">｜</span>
+  <a href="{% url 'calendar' %}">カレンダー</a>
+  <span class="sep">｜</span>
+  <a href="{% url 'my_reservations' %}">自分の予約</a>
+  <span class="sep">｜</span>
+  <span class="header-username">{{ request.user.name }}さん</span>
+  <form method="post" action="{% url 'logout' %}" class="logout-form">
+    {% csrf_token %}
+    <button type="submit" class="logout-btn-tab">ログアウト</button>
+  </form>
+</div>
