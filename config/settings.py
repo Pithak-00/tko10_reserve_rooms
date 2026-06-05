@@ -141,7 +141,7 @@ GOOGLE_CLIENT_ID     = os.environ.get('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
 GOOGLE_REDIRECT_URI  = os.environ.get(
     'GOOGLE_REDIRECT_URI',
-    'http://localhost:8000/reservations/auth/google/callback/'
+    'http://localhost/reservations/auth/google/callback/'
 )
 GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
@@ -151,14 +151,14 @@ GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 # qq .env ファイル（プロジェクトルートに作成）qqqqqqqqqqqqqqqqq
 # GOOGLE_CLIENT_ID=<Google Cloud Console で取得した値>
 # GOOGLE_CLIENT_SECRET=<同上>
-# GOOGLE_REDIRECT_URI=http://localhost:8000/reservations/auth/google/callback/
+# GOOGLE_REDIRECT_URI=http://localhost/reservations/auth/google/callback/
 
 # qq Google Cloud Console での設定手順 qqqqqqqqqqqqqqqqqqqqqqq
 # 1. https://console.cloud.google.com/ にアクセス
 # 2. 「APIとサービス」→「認証情報」→「OAuthクライアントIDを作成」
 # 3. アプリケーションの種類：「ウェブアプリケーション」を選択
 # 4. 承認済みリダイレクトURIに追加：
-#    http://localhost:8000/reservations/auth/google/callback/（開発用）
+#    http://localhost/reservations/auth/google/callback/（開発用）
 #    https://yourdomain.com/reservations/auth/google/callback/（本番用）
 # 5. 「Google Calendar API」を有効化（「ライブラリ」から検索して有効化）
 # 6. クライアントID・シークレットを .env に記載
