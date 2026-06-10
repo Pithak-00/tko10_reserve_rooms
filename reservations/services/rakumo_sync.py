@@ -4,29 +4,29 @@ rakumo_sync.py
 Rakumo（Google Workspace リソースカレンダー）と今回の予約システムを
 比較・同期するためのサービスクラス。
 
-【動作の仕組み】
-  Rakumoカレンダーは Google Workspace のリソースカレンダーと双方向リアルタイム同期
-  しています。そのため Google Calendar API でリソースカレンダーを読み書きすることで
-  Rakumo側の予約情報を取得・更新できます。
-
 【認証方式】
-  管理者ユーザーの OAuth トークン（既存の google_sync.py と同じ仕組み）を使用します。
-  リソースカレンダーへのアクセスには Google Workspace 管理者権限が必要です。
+  サービスアカウント認証（credentials/service_account.json）を使用します。
+  ユーザーごとのOAuth認証は不要です。
 
-【Step 1 スコープ】
-  - Rakumo側の会議室予約を取得して表示
-  - 今回のシステムの予約と比較し差分を検出
+  必要な設定（settings.py または .env）：
+    GOOGLE_SERVICE_ACCOUNT_FILE  ... JSONキーのパス（デフォルト: credentials/service_account.json）
+    GOOGLE_DELEGATED_ADMIN       ... ドメイン全体の委任で使用するGoogle Workspaceアカウントのメール
+
+【Google Workspace側の事前設定（管理コンソール）】
+  サービスアカウントにドメイン全体の委任を付与し、以下のスコープを許可：
+    https://www.googleapis.com/auth/calendar.readonly
 """
 import logging
+import os
 from datetime import datetime, timezone as dt_timezone, timedelta
-
-from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+
 try:
+    from google.oauth2 import service_account
     from googleapiclient.discovery import build
-    from google.oauth2.credentials import Credentials
     GOOGLE_API_AVAILABLE = True
 except ImportError:
     GOOGLE_API_AVAILABLE = False
@@ -34,12 +34,11 @@ except ImportError:
 
 class RakumoSyncService:
     """
-    Google Calendar API 経由で Rakumo の会議室予約を取得し、
-    ローカル予約と比較するサービスクラス。
+    サービスアカウント認証で Google Calendar API にアクセスし、
+    Rakumo の会議室予約を取得・比較するサービスクラス。
     """
 
-    def __init__(self, user):
-        self.user = user
+    def __init__(self):
         self.no_op = True
         self.error_message = None
 
@@ -47,53 +46,40 @@ class RakumoSyncService:
             self.error_message = "google-api-python-client がインストールされていません。"
             return
 
-        try:
-            from accounts.models import UserGoogleToken
-            from django.conf import settings
-            self.token_obj = user.google_token
-            self._settings = settings
-            if not self.token_obj.sync_enabled:
-                self.error_message = "Google カレンダー連携が有効になっていません。マイページから連携してください。"
-                return
-            self.no_op = False
-        except Exception as e:
-            self.error_message = f"Google アカウントが連携されていません: {e}"
+        from django.conf import settings
+        sa_file = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', '')
+        self.delegated_admin = getattr(settings, 'GOOGLE_DELEGATED_ADMIN', '')
 
-    def _refresh_token_if_needed(self):
-        """期限切れトークンを更新する"""
-        import requests
-        now = timezone.now()
-        if self.token_obj.token_expiry and self.token_obj.token_expiry <= now:
-            try:
-                resp = requests.post('https://oauth2.googleapis.com/token', data={
-                    'client_id':     self._settings.GOOGLE_CLIENT_ID,
-                    'client_secret': self._settings.GOOGLE_CLIENT_SECRET,
-                    'refresh_token': self.token_obj.refresh_token,
-                    'grant_type':    'refresh_token',
-                }, timeout=10)
-                resp.raise_for_status()
-                data = resp.json()
-                self.token_obj.access_token = data['access_token']
-                self.token_obj.token_expiry = now + timedelta(seconds=data.get('expires_in', 3600))
-                self.token_obj.save(update_fields=['access_token', 'token_expiry'])
-            except Exception as e:
-                logger.error(f'RakumoSync: Token refresh failed: {e}')
-                self.no_op = True
-                self.error_message = f"トークンの更新に失敗しました: {e}"
+        if not sa_file or not os.path.exists(sa_file):
+            self.error_message = (
+                f"サービスアカウントJSONが見つかりません: {sa_file}\n"
+                "credentials/service_account.json を配置してください。"
+            )
+            return
+
+        if not self.delegated_admin:
+            self.error_message = (
+                "GOOGLE_DELEGATED_ADMIN が設定されていません。\n"
+                ".env に Google Workspace 管理者メールを設定してください。\n"
+                "例: GOOGLE_DELEGATED_ADMIN=admin@yourdomain.com"
+            )
+            return
+
+        self._sa_file = sa_file
+        self.no_op = False
 
     def _get_service(self):
-        """Google Calendar API サービスオブジェクトを返す"""
-        self._refresh_token_if_needed()
-        if self.no_op:
+        """サービスアカウント認証済みの Google Calendar API サービスを返す"""
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                self._sa_file,
+                scopes=SCOPES,
+            ).with_subject(self.delegated_admin)
+            return build('calendar', 'v3', credentials=credentials)
+        except Exception as e:
+            logger.error(f"RakumoSync: サービスアカウント認証失敗: {e}")
+            self.error_message = f"サービスアカウント認証に失敗しました: {e}"
             return None
-        creds = Credentials(
-            token=self.token_obj.access_token,
-            refresh_token=self.token_obj.refresh_token,
-            token_uri='https://oauth2.googleapis.com/token',
-            client_id=self._settings.GOOGLE_CLIENT_ID,
-            client_secret=self._settings.GOOGLE_CLIENT_SECRET,
-        )
-        return build('calendar', 'v3', credentials=creds)
 
     def test_connection(self, calendar_id: str) -> dict:
         """
@@ -121,32 +107,31 @@ class RakumoSyncService:
             cal = svc.calendars().get(calendarId=calendar_id).execute()
             calendar_name = cal.get('summary', calendar_id)
 
-            # 直近7日間のイベント数を確認
+            # 直近7日間のイベント件数を確認
+            from django.utils import timezone
             now = timezone.now()
-            time_min = now.isoformat()
-            time_max = (now + timedelta(days=7)).isoformat()
             events_result = svc.events().list(
                 calendarId=calendar_id,
-                timeMin=time_min,
-                timeMax=time_max,
+                timeMin=now.isoformat(),
+                timeMax=(now + timedelta(days=7)).isoformat(),
                 singleEvents=True,
                 maxResults=100,
             ).execute()
-            events = events_result.get('items', [])
 
             return {
                 'success': True,
                 'calendar_name': calendar_name,
-                'event_count': len(events),
+                'event_count': len(events_result.get('items', [])),
             }
+
         except Exception as e:
             err_str = str(e)
             if '403' in err_str:
-                msg = "アクセス権限がありません。管理者権限または共有設定を確認してください。"
+                msg = "アクセス権限がありません。ドメイン全体の委任設定またはカレンダー共有設定を確認してください。"
             elif '404' in err_str:
                 msg = "カレンダーが見つかりません。カレンダーIDを確認してください。"
             elif '401' in err_str:
-                msg = "認証エラーです。Google アカウントを再連携してください。"
+                msg = "認証エラーです。サービスアカウントJSONとGOOGLE_DELEGATED_ADMINを確認してください。"
             else:
                 msg = f"接続エラー: {err_str}"
             logger.warning(f"RakumoSync test_connection failed for {calendar_id}: {e}")
@@ -195,14 +180,15 @@ class RakumoSyncService:
                 else:
                     start_dt = datetime.fromisoformat(start_raw['dateTime'])
                     end_dt   = datetime.fromisoformat(end_raw['dateTime'])
-                    # タイムゾーンが付いていない場合は UTC とみなす
                     if start_dt.tzinfo is None:
                         start_dt = start_dt.replace(tzinfo=dt_timezone.utc)
                     if end_dt.tzinfo is None:
                         end_dt = end_dt.replace(tzinfo=dt_timezone.utc)
 
-                organizer = item.get('organizer', {}).get('displayName') or \
-                            item.get('organizer', {}).get('email', '')
+                organizer = (
+                    item.get('organizer', {}).get('displayName') or
+                    item.get('organizer', {}).get('email', '')
+                )
 
                 results.append({
                     'id':         item.get('id', ''),
@@ -224,15 +210,18 @@ class RakumoSyncService:
 
         Returns:
             {
-                'rakumo_events':   list,   # Rakumo 側の予約一覧
-                'local_events':    list,   # ローカル側の予約一覧
-                'only_in_rakumo':  list,   # Rakumo にしかない予約
-                'only_in_local':   list,   # ローカルにしかない予約
-                'matched':         list,   # 両方に存在する予約（タイトル+開始時刻で照合）
-                'error':           str,    # エラー時のみ
+                'rakumo_events':   list,
+                'local_events':    list,
+                'only_in_rakumo':  list,
+                'only_in_local':   list,
+                'matched':         list,
+                'error':           str or None,
             }
         """
         from reservations.models import Reservation
+
+        if self.no_op:
+            return {'error': self.error_message or '設定エラー'}
 
         if not room.google_calendar_id:
             return {'error': 'この会議室にはGoogle カレンダーIDが設定されていません。'}
@@ -249,36 +238,29 @@ class RakumoSyncService:
         ).order_by('start_at')
 
         local_events = [{
-            'id':        r.id,
-            'title':     r.title,
-            'start':     r.start_at,
-            'end':       r.end_at,
-            'organizer': r.reserved_by,
+            'id':         r.id,
+            'title':      r.title,
+            'start':      r.start_at,
+            'end':        r.end_at,
+            'organizer':  r.reserved_by,
             'is_all_day': r.is_all_day,
         } for r in local_qs]
 
-        # 照合キー：タイトル + 開始時刻（分単位）
+        # 照合キー：タイトル + 開始時刻（分単位、JST）
         def make_key(title, start_dt):
             import pytz
             jst = pytz.timezone('Asia/Tokyo')
-            if hasattr(start_dt, 'astimezone'):
-                start_jst = start_dt.astimezone(jst)
-            else:
-                start_jst = start_dt
+            start_jst = start_dt.astimezone(jst) if hasattr(start_dt, 'astimezone') else start_dt
             return f"{title.strip().lower()}|{start_jst.strftime('%Y%m%d%H%M')}"
 
         rakumo_keys = {make_key(e['title'], e['start']): e for e in rakumo_events}
         local_keys  = {make_key(e['title'], e['start']): e for e in local_events}
 
-        only_in_rakumo = [e for k, e in rakumo_keys.items() if k not in local_keys]
-        only_in_local  = [e for k, e in local_keys.items()  if k not in rakumo_keys]
-        matched        = [e for k, e in rakumo_keys.items() if k in local_keys]
-
         return {
             'rakumo_events':  rakumo_events,
             'local_events':   local_events,
-            'only_in_rakumo': only_in_rakumo,
-            'only_in_local':  only_in_local,
-            'matched':        matched,
+            'only_in_rakumo': [e for k, e in rakumo_keys.items() if k not in local_keys],
+            'only_in_local':  [e for k, e in local_keys.items()  if k not in rakumo_keys],
+            'matched':        [e for k, e in rakumo_keys.items() if k in local_keys],
             'error':          None,
         }

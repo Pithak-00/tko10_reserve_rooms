@@ -877,7 +877,7 @@ class RakumoTestConnectionView(StaffRequiredMixin, View):
             return JsonResponse({'success': False, 'error': 'Google カレンダーIDが設定されていません。'})
 
         from reservations.services.rakumo_sync import RakumoSyncService
-        svc = RakumoSyncService(request.user)
+        svc = RakumoSyncService()
         result = svc.test_connection(room.google_calendar_id)
         return JsonResponse(result)
 
@@ -929,10 +929,10 @@ class RakumoDiffView(StaffRequiredMixin, View):
             return render(request, self.template_name, context)
 
         from reservations.services.rakumo_sync import RakumoSyncService
-        svc = RakumoSyncService(request.user)
+        svc = RakumoSyncService()
 
         if svc.no_op:
-            messages.error(request, svc.error_message or 'Google アカウントが連携されていません。')
+            messages.error(request, svc.error_message or 'サービスアカウントの設定を確認してください。')
             return render(request, self.template_name, context)
 
         diff = svc.compare_with_local(room, dt_from, dt_to)

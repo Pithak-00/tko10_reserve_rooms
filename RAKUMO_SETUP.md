@@ -6,133 +6,158 @@
 RakumoカレンダーはGoogle Calendarとリアルタイム双方向同期しているため、  
 Google Calendar API を通じてRakumoの会議室予約を取得・比較できます。
 
+**認証方式：サービスアカウント認証**（ユーザーごとのOAuthログイン不要）
+
 > **前提**：このドキュメントはローカル環境（`http://localhost`）での作業を想定しています。
 
 ---
 
-## Step 1: Google Cloud Console での設定（担当者が行う）
+## 全体の流れ
 
-### 1-1. プロジェクト確認
-既存のプロジェクト（Google OAuth連携で使用中のもの）を引き続き使用します。  
-`https://console.cloud.google.com/` → 対象プロジェクトを選択。
-
-### 1-2. Google Calendar API の有効化
-1. 「APIとサービス」→「ライブラリ」
-2. 「Google Calendar API」を検索 → **有効にする**
-3. （すでに有効な場合はスキップ）
-
-### 1-3. OAuthスコープの追加
-1. 「APIとサービス」→「OAuth同意画面」
-2. 「スコープを追加または削除」をクリック
-3. 以下のスコープを追加：
-   - `https://www.googleapis.com/auth/calendar.readonly`  
-     （読み取りのみ。差分確認だけなら十分）
-   - または既存の `https://www.googleapis.com/auth/calendar.events` でも可
-
-> ⚠ スコープを変更した場合、ユーザーは **再認証（再ログイン）** が必要です。
-
-### 1-4. ローカル環境用リダイレクトURIの追加
-ローカルで OAuth 認証を動かすには、Google Cloud Console に `localhost` のリダイレクトURIを登録する必要があります。
-
-1. 「APIとサービス」→「認証情報」→ 対象の OAuth クライアントIDをクリック
-2. 「承認済みのリダイレクト URI」に以下を追加：
-   ```
-   http://localhost/reservations/auth/google/callback/
-   ```
-3. 「保存」をクリック
-
-> ⚠ `http://` （HTTPSではなく HTTP）で登録してください。localhostはHTTPが許可されています。
+```
+STEP 1: Google Cloud でAPIを有効化
+STEP 2: サービスアカウントにドメイン全体の委任を設定（管理コンソール）
+STEP 3: サービスアカウントJSONをプロジェクトに配置
+STEP 4: .env に管理者メールアドレスを設定
+STEP 5: 会議室のカレンダーIDを取得
+STEP 6: システムでカレンダーIDを設定・接続テスト
+STEP 7: 差分確認
+```
 
 ---
 
-## Step 2: ローカル環境の `.env` 設定
+## STEP 1: Google Cloud で API を有効化（担当者が行う）
 
-プロジェクトルート（`manage.py` と同じフォルダ）に `.env` ファイルを作成し、以下を記載します：
-
-```
-GOOGLE_CLIENT_ID=（Google Cloud Console で取得したクライアントID）
-GOOGLE_CLIENT_SECRET=（同上、クライアントシークレット）
-GOOGLE_REDIRECT_URI=http://localhost/reservations/auth/google/callback/
-```
-
-> クライアントIDとシークレットは、Google Cloud Console →「APIとサービス」→「認証情報」→ 対象OAuthクライアント で確認できます。
+1. `https://console.cloud.google.com` にアクセス
+2. プロジェクト「roomreserve-498906」を選択
+3. 「APIとサービス」→「ライブラリ」から以下を有効化：
+   - **Google Calendar API**
+   - **Admin SDK API**
 
 ---
 
-## Step 3: Google Workspace 管理コンソールでの確認（担当者が行う）
+## STEP 2: サービスアカウントにドメイン全体の委任を設定（担当者が行う）
 
-### 3-1. 会議室リソースのカレンダーIDを確認
+サービスアカウント（`roomreserve@roomreserve-498906.iam.gserviceaccount.com`）が  
+Google Workspaceのリソースカレンダーにアクセスできるよう、管理コンソールで委任設定を行います。
 
 1. `https://admin.google.com` にアクセス（Google Workspace 管理者アカウントで）
-2. 「ディレクトリ」→「建物とリソース」→「リソースを管理」
-3. 対象の会議室リソースをクリック
-4. **「カレンダーID」** をコピー（例: `c_xxxxxxxxxxxx@resource.calendar.google.com`）
-5. 会議室ごとにIDをメモして共有してもらう
+2. 「セキュリティ」→「アクセスとデータ管理」→「APIの制御」
+3. 「ドメイン全体の委任を管理する」→「新しく追加」
+4. 以下を入力：
 
-### 3-2. リソースカレンダーの共有設定確認
+   **クライアントID**：`113827268367000422711`
 
-リソースカレンダーへのアクセスには、以下のいずれかの権限が必要です：
+   **OAuthスコープ**（以下をカンマ区切りで入力）：
+   ```
+   https://www.googleapis.com/auth/calendar.readonly,https://www.googleapis.com/auth/admin.directory.resource.calendar
+   ```
 
-| 権限レベル | 説明 |
-|---|---|
-| Google Workspace 管理者 | すべてのリソースカレンダーにアクセス可能 |
-| 共有設定：「組織内の全員が閲覧可能」 | 一般ユーザーでも閲覧可能 |
-| 共有設定：「個別共有」 | 特定ユーザーのみ |
+5. 「承認」をクリック
 
-管理コンソール →「カレンダー」→ リソースを選択 →「共有設定」で確認・変更できます。
+> ⚠ この設定はGoogle Workspace管理者のみが行えます。
 
 ---
 
-## Step 4: ローカルシステムでの操作
+## STEP 3: サービスアカウントJSONをプロジェクトに配置
 
-### 4-1. ローカルサーバーを起動
+サービスアカウントのJSONキーファイルはすでに以下に配置済みです：
+
+```
+tko10_reserve_rooms/
+└── credentials/
+    └── service_account.json   ← 配置済み
+```
+
+> ⚠ `credentials/` フォルダは `.gitignore` に追加済みです。Gitにコミットされません。
+
+---
+
+## STEP 4: .env に管理者メールアドレスを設定
+
+プロジェクトルートの `.env` ファイルに以下を追加します：
+
+```
+GOOGLE_DELEGATED_ADMIN=（Google Workspaceの管理者メールアドレス）
+```
+
+例：
+```
+GOOGLE_DELEGATED_ADMIN=admin@yourdomain.com
+```
+
+> ドメイン全体の委任では、サービスアカウントがこのメールアドレスのユーザーとして動作します。  
+> Google Workspace の管理者アカウントのメールアドレスを設定してください。
+
+`GOOGLE_SERVICE_ACCOUNT_FILE` はデフォルトで `credentials/service_account.json` を参照するため、  
+JSONを上記パスに配置している場合は設定不要です。
+
+---
+
+## STEP 5: 会議室のカレンダーIDを取得（担当者が行う）
+
+1. `https://admin.google.com` にアクセス（管理者アカウントで）
+2. 「ディレクトリ」→「建物とリソース」→「リソースを管理」
+3. 対象の会議室リソースをクリック
+4. 「リソースのメール」または「カレンダーID」をコピー
+   （例: `c_xxxxxxxxxxxx@resource.calendar.google.com`）
+5. 会議室ごとにIDをメモして共有してもらう
+
+---
+
+## STEP 6: システムでカレンダーIDを設定・接続テスト
+
+### 6-1. ローカルサーバーを起動
+
 ```bash
-python manage.py migrate   # マイグレーションがまだの場合
+python manage.py migrate   # まだの場合
 python manage.py runserver
 ```
-ブラウザで `http://localhost` にアクセスできることを確認します。
 
-### 4-2. 管理者アカウントでログイン
-`is_staff=True` の管理者アカウントでシステムにログイン。
+### 6-2. Rakumo連携設定ページを開く
 
-### 4-3. Google カレンダー連携を有効化
-1. 「**自分の予約一覧**」ページ（`http://localhost/reservations/my/`）を開く
-2. ページ内の「**Google カレンダー連携**」カードにある「Googleと連携する」ボタンをクリック
-3. Googleのログイン画面が開くので、**会社のGoogle Workspaceアカウント**（Rakumoを使っているアカウント）でログイン・承認する
-4. 「連携中」バッジが表示されれば完了
+`http://localhost/admin-panel/rakumo/` にアクセス（管理者アカウントでログイン済みであること）
 
-> ⚠ ここで使うGoogleアカウントは、Rakumoの会議室リソースにアクセスできるアカウント（Google Workspace 管理者が理想）である必要があります。
+### 6-3. カレンダーIDを入力・保存
 
-### 4-4. Rakumo連携設定ページでカレンダーIDを設定
-1. `http://localhost/admin-panel/rakumo/` を開く
-2. Step 3-1 で取得した各会議室のカレンダーIDを入力して「保存」
-3. 「接続テスト」ボタンをクリックして「✓ 接続OK」になることを確認
+各会議室に対応するカレンダーIDを入力して「カレンダーIDを保存」をクリック。
 
-### 4-5. 差分確認
-1. `http://localhost/admin-panel/rakumo/diff/` を開く
-2. 会議室・期間を選択して「差分を確認する」
-3. 結果が3カテゴリで表示される：
-   - 🟢 **一致**：両システムに同じ予約あり
-   - 🟠 **Rakumoのみ**：Rakumoにあってこのシステムにない予約
-   - 🔵 **このシステムのみ**：このシステムにあってRakumoに未反映の予約
+### 6-4. 接続テスト
+
+「接続テスト」ボタンをクリックして「✓ 接続OK（直近7日: N件）」と表示されれば成功。
+
+---
+
+## STEP 7: 差分確認
+
+`http://localhost/admin-panel/rakumo/diff/` にアクセス。  
+会議室・期間を選択して「差分を確認する」をクリック。
+
+結果が3カテゴリで表示されます：
+- 🟢 **一致**：両システムに同じ予約あり
+- 🟠 **Rakumoのみ**：Rakumoにあってこのシステムにない予約
+- 🔵 **このシステムのみ**：このシステムにあってRakumoに未反映の予約
 
 ---
 
 ## トラブルシューティング
 
-### OAuth認証後に「リダイレクトURIが一致しません」エラー
-- Google Cloud Console のリダイレクトURIに `http://localhost/reservations/auth/google/callback/` が登録されているか確認
-- `.env` の `GOOGLE_REDIRECT_URI` が同じ値になっているか確認
+### 「サービスアカウントJSONが見つかりません」
+- `credentials/service_account.json` が存在するか確認してください
+
+### 「GOOGLE_DELEGATED_ADMIN が設定されていません」
+- `.env` に `GOOGLE_DELEGATED_ADMIN=admin@yourdomain.com` を追記してください
 
 ### 「403 アクセス権限がありません」
-- リソースカレンダーの共有設定を確認してください
-- Google Workspace 管理者アカウントで OAuth 認証を行ってください
+- STEP 2 のドメイン全体の委任設定が完了しているか確認してください
+- 委任設定後、反映に数分かかる場合があります
 
 ### 「404 カレンダーが見つかりません」
-- カレンダーIDが正しいか確認してください（`@resource.calendar.google.com` で終わる形式）
+- カレンダーIDが正しいか確認してください（`@resource.calendar.google.com` 形式）
 
 ### 「401 認証エラー」
-- 「自分の予約一覧」ページでGoogle連携を一度解除して再連携してください
+- サービスアカウントJSONの内容が正しいか確認してください
+- `GOOGLE_DELEGATED_ADMIN` に指定したメールアドレスが有効なGoogle Workspaceアカウントか確認してください
 
 ### 差分件数が多い（初回）
 - リザブローからの移行直後は差分が多く出ます
@@ -140,7 +165,7 @@ python manage.py runserver
 
 ---
 
-## 今後の拡張予定（Step 2 以降）
+## 今後の拡張予定
 
 | フェーズ | 内容 | 状態 |
 |---|---|---|
