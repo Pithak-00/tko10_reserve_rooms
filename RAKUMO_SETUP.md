@@ -15,86 +15,53 @@ Google Calendar API を通じてRakumoの会議室予約を取得・比較でき
 ## 全体の流れ
 
 ```
-STEP 1: Google Cloud でAPIを有効化
-STEP 2: サービスアカウントにドメイン全体の委任を設定（管理コンソール）
-STEP 3: サービスアカウントJSONをプロジェクトに配置
-STEP 4: .env に管理者メールアドレスを設定
-STEP 5: 会議室のカレンダーIDを取得
-STEP 6: システムでカレンダーIDを設定・接続テスト
-STEP 7: 差分確認
+STEP 1: Google Cloud で Calendar API を有効化
+STEP 2: 各会議室のリソースカレンダーをサービスアカウントに共有（管理コンソール）
+STEP 3: 会議室のカレンダーIDを取得
+STEP 4: システムでカレンダーIDを設定・接続テスト
+STEP 5: 差分確認
 ```
+
+> ドメイン全体の委任・`GOOGLE_DELEGATED_ADMIN` の設定は不要です。  
+> `.env` への追記も不要です（JSONファイルを配置するだけで動作します）。
 
 ---
 
-## STEP 1: Google Cloud で API を有効化（担当者が行う）
+## STEP 1: Google Cloud で Calendar API を有効化（担当者が行う）
 
 1. `https://console.cloud.google.com` にアクセス
 2. プロジェクト「roomreserve-498906」を選択
 3. 「APIとサービス」→「ライブラリ」から以下を有効化：
    - **Google Calendar API**
-   - **Admin SDK API**
 
 ---
 
-## STEP 2: サービスアカウントにドメイン全体の委任を設定（担当者が行う）
+## STEP 2: 各会議室のリソースカレンダーをサービスアカウントに共有（担当者が行う）
 
-サービスアカウント（`roomreserve@roomreserve-498906.iam.gserviceaccount.com`）が  
-Google Workspaceのリソースカレンダーにアクセスできるよう、管理コンソールで委任設定を行います。
+サービスアカウントが会議室カレンダーにアクセスできるよう、  
+Google カレンダー上で各会議室リソースを以下のメールアドレスに直接共有します。
 
-1. `https://admin.google.com` にアクセス（Google Workspace 管理者アカウントで）
-2. 「セキュリティ」→「アクセスとデータ管理」→「APIの制御」
-3. 「ドメイン全体の委任を管理する」→「新しく追加」
-4. 以下を入力：
+**共有先のメールアドレス：**
+```
+roomreserve@roomreserve-498906.iam.gserviceaccount.com
+```
 
-   **クライアントID**：`113827268367000422711`
+**共有手順（会議室ごとに繰り返す）：**
 
-   **OAuthスコープ**（以下をカンマ区切りで入力）：
-   ```
-   https://www.googleapis.com/auth/calendar.readonly,https://www.googleapis.com/auth/admin.directory.resource.calendar
-   ```
+1. `https://calendar.google.com` にアクセス（Google Workspaceアカウントで）
+2. 左サイドバーの「他のカレンダー」から対象の会議室リソースカレンダーを探す
+   - 見つからない場合は管理コンソール（`admin.google.com`）→「建物とリソース」から確認
+3. 会議室カレンダーの「︙」→「設定と共有」
+4. 「特定のユーザーまたはグループと共有する」→「ユーザーを追加」
+5. 上記のサービスアカウントメールを入力
+6. 権限：**「予定の閲覧（全ての予定の詳細）」** を選択
+7. 「送信」をクリック
 
-5. 「承認」をクリック
-
-> ⚠ この設定はGoogle Workspace管理者のみが行えます。
+> ⚠ この操作はGoogle Workspace管理者またはカレンダーオーナーのみが行えます。
 
 ---
 
-## STEP 3: サービスアカウントJSONをプロジェクトに配置
-
-サービスアカウントのJSONキーファイルはすでに以下に配置済みです：
-
-```
-tko10_reserve_rooms/
-└── credentials/
-    └── service_account.json   ← 配置済み
-```
-
-> ⚠ `credentials/` フォルダは `.gitignore` に追加済みです。Gitにコミットされません。
-
----
-
-## STEP 4: .env に管理者メールアドレスを設定
-
-プロジェクトルートの `.env` ファイルに以下を追加します：
-
-```
-GOOGLE_DELEGATED_ADMIN=（Google Workspaceの管理者メールアドレス）
-```
-
-例：
-```
-GOOGLE_DELEGATED_ADMIN=admin@yourdomain.com
-```
-
-> ドメイン全体の委任では、サービスアカウントがこのメールアドレスのユーザーとして動作します。  
-> Google Workspace の管理者アカウントのメールアドレスを設定してください。
-
-`GOOGLE_SERVICE_ACCOUNT_FILE` はデフォルトで `credentials/service_account.json` を参照するため、  
-JSONを上記パスに配置している場合は設定不要です。
-
----
-
-## STEP 5: 会議室のカレンダーIDを取得（担当者が行う）
+## STEP 3: 会議室のカレンダーIDを取得（担当者が行う）
 
 1. `https://admin.google.com` にアクセス（管理者アカウントで）
 2. 「ディレクトリ」→「建物とリソース」→「リソースを管理」
@@ -105,30 +72,30 @@ JSONを上記パスに配置している場合は設定不要です。
 
 ---
 
-## STEP 6: システムでカレンダーIDを設定・接続テスト
+## STEP 4: システムでカレンダーIDを設定・接続テスト
 
-### 6-1. ローカルサーバーを起動
+### 4-1. ローカルサーバーを起動
 
 ```bash
 python manage.py migrate   # まだの場合
 python manage.py runserver
 ```
 
-### 6-2. Rakumo連携設定ページを開く
+### 4-2. Rakumo連携設定ページを開く
 
 `http://localhost/admin-panel/rakumo/` にアクセス（管理者アカウントでログイン済みであること）
 
-### 6-3. カレンダーIDを入力・保存
+### 4-3. カレンダーIDを入力・保存
 
 各会議室に対応するカレンダーIDを入力して「カレンダーIDを保存」をクリック。
 
-### 6-4. 接続テスト
+### 4-4. 接続テスト
 
 「接続テスト」ボタンをクリックして「✓ 接続OK（直近7日: N件）」と表示されれば成功。
 
 ---
 
-## STEP 7: 差分確認
+## STEP 5: 差分確認
 
 `http://localhost/admin-panel/rakumo/diff/` にアクセス。  
 会議室・期間を選択して「差分を確認する」をクリック。
@@ -145,12 +112,10 @@ python manage.py runserver
 ### 「サービスアカウントJSONが見つかりません」
 - `credentials/service_account.json` が存在するか確認してください
 
-### 「GOOGLE_DELEGATED_ADMIN が設定されていません」
-- `.env` に `GOOGLE_DELEGATED_ADMIN=admin@yourdomain.com` を追記してください
-
 ### 「403 アクセス権限がありません」
-- STEP 2 のドメイン全体の委任設定が完了しているか確認してください
-- 委任設定後、反映に数分かかる場合があります
+- STEP 2 のカレンダー共有設定が完了しているか確認してください
+- 共有設定後、反映に数分かかる場合があります
+- 共有先のメールアドレスが `roomreserve@roomreserve-498906.iam.gserviceaccount.com` になっているか確認してください
 
 ### 「404 カレンダーが見つかりません」
 - カレンダーIDが正しいか確認してください（`@resource.calendar.google.com` 形式）

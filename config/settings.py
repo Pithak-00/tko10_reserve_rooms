@@ -150,17 +150,13 @@ GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 # ─────────────────────────────────────────────────────────
 # credentials/service_account.json にJSONキーを配置してください
 # （credentials/ フォルダは .gitignore 済み）
+# ドメイン全体の委任・GOOGLE_DELEGATED_ADMIN は不要です。
+# 各会議室のリソースカレンダーをサービスアカウントのメールに直接共有してください：
+#   roomreserve@roomreserve-498906.iam.gserviceaccount.com
 GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get(
     'GOOGLE_SERVICE_ACCOUNT_FILE',
     os.path.join(BASE_DIR, 'credentials', 'service_account.json')
 )
-# ドメイン全体の委任で使用するGoogle Workspaceアカウントのメールアドレス
-# （Google Workspace管理者のメールアドレスを設定してください）
-GOOGLE_DELEGATED_ADMIN = os.environ.get('GOOGLE_DELEGATED_ADMIN', '')
-
-# .env への記載例：
-# GOOGLE_SERVICE_ACCOUNT_FILE=/path/to/service_account.json  # デフォルト: credentials/service_account.json
-# GOOGLE_DELEGATED_ADMIN=admin@yourdomain.com
 
 # qq python-dotenv で .env を読み込む（manage.py と同階層に.env）q
 # pip install python-dotenv

@@ -6,15 +6,15 @@ Rakumo（Google Workspace リソースカレンダー）と今回の予約シス
 
 【認証方式】
   サービスアカウント認証（credentials/service_account.json）を使用します。
-  ユーザーごとのOAuth認証は不要です。
+  ユーザーごとのOAuth認証・GOOGLE_DELEGATED_ADMIN 設定は不要です。
 
   必要な設定（settings.py または .env）：
     GOOGLE_SERVICE_ACCOUNT_FILE  ... JSONキーのパス（デフォルト: credentials/service_account.json）
-    GOOGLE_DELEGATED_ADMIN       ... ドメイン全体の委任で使用するGoogle Workspaceアカウントのメール
 
-【Google Workspace側の事前設定（管理コンソール）】
-  サービスアカウントにドメイン全体の委任を付与し、以下のスコープを許可：
-    https://www.googleapis.com/auth/calendar.readonly
+【Google Workspace側の事前設定】
+  各会議室のリソースカレンダーをサービスアカウントのメールアドレスに直接共有する。
+    roomreserve@roomreserve-498906.iam.gserviceaccount.com
+  ドメイン全体の委任（GOOGLE_DELEGATED_ADMIN）は不要です。
 """
 import logging
 import os
@@ -48,20 +48,11 @@ class RakumoSyncService:
 
         from django.conf import settings
         sa_file = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', '')
-        self.delegated_admin = getattr(settings, 'GOOGLE_DELEGATED_ADMIN', '')
 
         if not sa_file or not os.path.exists(sa_file):
             self.error_message = (
                 f"サービスアカウントJSONが見つかりません: {sa_file}\n"
                 "credentials/service_account.json を配置してください。"
-            )
-            return
-
-        if not self.delegated_admin:
-            self.error_message = (
-                "GOOGLE_DELEGATED_ADMIN が設定されていません。\n"
-                ".env に Google Workspace 管理者メールを設定してください。\n"
-                "例: GOOGLE_DELEGATED_ADMIN=admin@yourdomain.com"
             )
             return
 
@@ -74,7 +65,7 @@ class RakumoSyncService:
             credentials = service_account.Credentials.from_service_account_file(
                 self._sa_file,
                 scopes=SCOPES,
-            ).with_subject(self.delegated_admin)
+            )
             return build('calendar', 'v3', credentials=credentials)
         except Exception as e:
             logger.error(f"RakumoSync: サービスアカウント認証失敗: {e}")
