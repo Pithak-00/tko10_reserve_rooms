@@ -19,6 +19,7 @@ from reservations.models import Room, Reservation, Building, Facility, Operation
 from reservations.forms import ReservationFilterForm
 from accounts.models import Department, User
 from .forms import RoomForm, UserCreateForm, UserUpdateForm, CSVUploadForm, FacilityForm, BuildingForm, DepartmentForm, UserPasswordResetForm
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -524,6 +525,216 @@ class CSVImportExecuteView(StaffRequiredMixin, View):
         )
         messages.success(
             request, "{}件のユーザーをインポートしました。".format(len(users_to_create))
+        )
+        return redirect("user_admin_list")
+
+
+# F-18: CSV一括削除
+
+
+class CSVDeleteView(StaffRequiredMixin, View):
+    template_name = "admin_panel/csv_delete.html"
+
+    @staticmethod
+    def _decode_csv(raw):
+        try:
+            import chardet
+
+            detected = chardet.detect(raw)
+            encoding = detected.get("encoding") or "utf-8"
+        except ImportError:
+            encoding = "utf-8"
+        try:
+            return raw.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            return raw.decode("cp932", errors="replace")
+
+    @staticmethod
+    def _parse_csv(text):
+        reader = csv.reader(io.StringIO(text))
+        rows_raw = list(reader)
+        if not rows_raw:
+            return []
+
+        data_rows = rows_raw[1:]  # skip header
+
+        csv_login_ids = [r[0].strip() for r in data_rows if len(r) > 0 and r[0].strip()]
+
+        # CSV内の重複チェック用
+        login_id_counts = Counter(csv_login_ids)
+
+        existing_ids = set(
+            User.objects.filter(login_id__in=csv_login_ids).values_list(
+                "login_id", flat=True
+            )
+        )
+
+        # ユーザ情報＋所属情報をまとめて取得
+        users = User.objects.select_related("department").filter(
+            login_id__in=csv_login_ids
+        )
+
+        # login_idをキーに検索しやすくする
+        user_dict = {
+            user.login_id: user
+            for user in users
+        }
+
+        preview_rows = []
+        for i, row in enumerate(data_rows, start=2):
+            login_id = row[0].strip() if len(row) > 0 else ""
+
+            error_msg = ""
+
+            # CSV内で重複している場合
+            if login_id and login_id_counts[login_id] > 1:
+                error_msg = "CSV内のユーザIDが重複しています"
+
+            user = user_dict.get(login_id)
+
+            if not user:
+                error_msg = "このユーザーIDは存在しません"
+
+                name = ""
+                role = ""
+                dept_name = ""
+            else:
+                name = user.name
+                role = user.role
+
+                # Department.nameを取得
+                dept_name = (
+                    user.department.name
+                    if user.department
+                    else ""
+                )
+
+            preview_rows.append(
+                {
+                    "row_num": i,
+                    "login_id": login_id,
+                    "name": name,
+                    "role": role,
+                    "dept_name": dept_name,
+                    "is_valid": error_msg == "",
+                    "error": error_msg,
+                }
+            )
+
+        return preview_rows
+
+    def get(self, request, *args, **kwargs):
+        request.session.pop(SESSION_KEY_CSV_PREVIEW, None)
+        return render(request, self.template_name, {"form": CSVUploadForm()})
+
+    def post(self, request, *args, **kwargs):
+        form = CSVUploadForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form})
+
+        csv_file = form.cleaned_data["csv_file"]
+        filename = csv_file.name
+
+        try:
+            raw = csv_file.read()
+            text = self._decode_csv(raw)
+            preview_rows = self._parse_csv(text)
+        except Exception as exc:
+            logger.error(
+                "CSV parse error. admin_id=%s filename=%s detail=%s",
+                request.user.pk,
+                filename,
+                exc,
+            )
+            form.add_error(None, "CSVファイルの読み込みに失敗しました。")
+            return render(request, self.template_name, {"form": form})
+
+        request.session[SESSION_KEY_CSV_PREVIEW] = preview_rows
+
+        valid_count = sum(1 for r in preview_rows if r["is_valid"])
+        error_count = len(preview_rows) - valid_count
+
+        if error_count > 0:
+            logger.warning(
+                "CSV delete skipped rows=%s admin_id=%s", error_count, request.user.pk
+            )
+
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": CSVUploadForm(),
+                "preview_rows": preview_rows,
+                "valid_count": valid_count,
+                "error_count": error_count,
+                "filename": filename,
+            },
+        )
+
+class CSVDeleteExecuteView(StaffRequiredMixin, View):
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        preview_rows = request.session.get(SESSION_KEY_CSV_PREVIEW)
+
+        if not preview_rows:
+            messages.error(
+                request, "セッションが切れました。再度CSVをアップロードしてください。"
+            )
+            return redirect("csv_delete")
+
+        valid_rows = [r for r in preview_rows if r["is_valid"]]
+        skip_count = len(preview_rows) - len(valid_rows)
+        users_to_delete = []
+
+        try:
+            with transaction.atomic():
+                for row in valid_rows:
+                    users_to_delete.append(row["login_id"])
+                
+                # 削除基準日
+                target_date = timezone.now()
+
+                # Userテーブルから対象ユーザーのidを取得
+                ids = set(
+                    User.objects.filter(login_id__in=users_to_delete).values_list(
+                        "id", flat=True
+                    )
+                )
+
+                # reservationsテーブルから対象ユーザーかつ処理日以降のデータを削除
+                Reservation.objects.filter(
+                    user_id__in=ids,
+                    start_at__gte=target_date,
+                ).delete()
+
+                # Userテーブルから対象ユーザーを削除
+                deleted_count, _ = User.objects.filter(
+                    login_id__in=users_to_delete
+                ).delete()
+
+
+        except Exception as exc:
+            logger.error(
+                "CSV delete failed. admin_id=%s detail=%s",
+                request.user.pk,
+                exc,
+            )
+            messages.error(
+                request,
+                "一括削除中にエラーが発生しました。管理者に連絡してください。",
+            )
+            return redirect("csv_delete")
+
+        request.session.pop(SESSION_KEY_CSV_PREVIEW, None)
+        logger.info(
+            "CSV delete success. deleted=%s skipped=%s admin_id=%s",
+            len(users_to_delete),
+            skip_count,
+            request.user.pk,
+        )
+        messages.success(
+            request, "{}件のユーザーを一括削除しました。".format(len(users_to_delete))
         )
         return redirect("user_admin_list")
 
