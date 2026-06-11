@@ -13,7 +13,7 @@ from django.utils import timezone
 from django.core.paginator import Paginator
 from django.db.models import Count
 from django.http import HttpResponseForbidden
-from datetime import date
+from datetime import datetime, time
 
 from reservations.models import Room, Reservation, Building, Facility, OperationLog
 from reservations.forms import ReservationFilterForm
@@ -569,7 +569,7 @@ class CSVDeleteView(StaffRequiredMixin, View):
             )
         )
 
-        # ユーザ情報＋所属情報をまとめて取得
+        # DBよりユーザ情報＋所属情報をまとめて取得
         users = User.objects.select_related("department").filter(
             login_id__in=csv_login_ids
         )
@@ -692,8 +692,13 @@ class CSVDeleteExecuteView(StaffRequiredMixin, View):
                 for row in valid_rows:
                     users_to_delete.append(row["login_id"])
                 
-                # 削除基準日
-                target_date = timezone.now()
+                # 削除基準日の取得
+                target_date = timezone.make_aware(
+                    datetime.combine(
+                        timezone.localdate(),
+                        time.min,
+                    )
+                )
 
                 # Userテーブルから対象ユーザーのidを取得
                 ids = set(
@@ -702,17 +707,20 @@ class CSVDeleteExecuteView(StaffRequiredMixin, View):
                     )
                 )
 
-                # reservationsテーブルから対象ユーザーかつ処理日以降のデータを削除
+                # reservationsテーブルの更新
                 Reservation.objects.filter(
                     user_id__in=ids,
                     start_at__gte=target_date,
-                ).delete()
+                ).update(
+                    is_cancelled=True
+                )
 
-                # Userテーブルから対象ユーザーを削除
-                deleted_count, _ = User.objects.filter(
+                # usersテーブルの更新
+                updated_count = User.objects.filter(
                     login_id__in=users_to_delete
-                ).delete()
-
+                ).update(
+                    is_active=False
+                )
 
         except Exception as exc:
             logger.error(
