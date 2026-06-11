@@ -172,5 +172,6 @@ CSRF_TRUSTED_ORIGINS = [
     'https://tko9.bold-rooms-reserve.com',  # 新しいHTTPSのURLをスキーム付きで許可
 ]
 
-SESSION_COOKIE_SECURE = True   # セッション Cookie を HTTPS 専用に
-CSRF_COOKIE_SECURE    = True   # CSRF Cookie も同様
+#TODO:ローカル環境で実行のため一旦コメントアウト
+#SESSION_COOKIE_SECURE = True   # セッション Cookie を HTTPS 専用に
+#CSRF_COOKIE_SECURE    = True   # CSRF Cookie も同様
