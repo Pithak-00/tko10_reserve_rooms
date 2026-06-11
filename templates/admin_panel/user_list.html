@@ -146,6 +146,7 @@
                       </button>
                     {% else %}
                       <form method="post"
+                            id="disable-form-{{ user.id }}"
                             action="{% url 'user_toggle_active' user.pk %}"
                             class="logout-form">
                         {% csrf_token %}
