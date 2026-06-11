@@ -239,8 +239,8 @@ class RakumoSyncService:
 
         # 照合キー：タイトル + 開始時刻（分単位、JST）
         def make_key(title, start_dt):
-            import pytz
-            jst = pytz.timezone('Asia/Tokyo')
+            from zoneinfo import ZoneInfo
+            jst = ZoneInfo('Asia/Tokyo')
             start_jst = start_dt.astimezone(jst) if hasattr(start_dt, 'astimezone') else start_dt
             return f"{title.strip().lower()}|{start_jst.strftime('%Y%m%d%H%M')}"
 
