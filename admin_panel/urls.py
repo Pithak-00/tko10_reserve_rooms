@@ -26,6 +26,8 @@ from .views import (
     DepartmentUpdateView,
     DepartmentDeleteView,
     OperationLogView,
+    CSVDeleteView,
+    CSVDeleteExecuteView,
 )
 
 urlpatterns = [
@@ -84,4 +86,12 @@ urlpatterns = [
     path('departments/<int:pk>/delete/',   DepartmentDeleteView.as_view(), name='department_delete'),
     # 操作ログ
     path('operation-log/',                 OperationLogView.as_view(),     name='operation_log'),
+
+    # F-25: CSV一括削除
+    path("users/csv-delete/", CSVDeleteView.as_view(), name="csv_delete"),
+    path(
+        "users/csv-delete/execute/",
+        CSVDeleteExecuteView.as_view(),
+        name="csv_delete_execute",
+    ),
 ]
