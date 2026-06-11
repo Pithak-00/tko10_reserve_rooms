@@ -14,7 +14,7 @@ Rakumo（Google Workspace リソースカレンダー）と今回の予約シス
 【Google Workspace側の事前設定】
   各会議室のリソースカレンダーをサービスアカウントのメールアドレスに直接共有する。
     roomreserve@roomreserve-498906.iam.gserviceaccount.com
-  ドメイン全体の委任（GOOGLE_DELEGATED_ADMIN）は不要です。
+  権限：「予定の編集」（自動連携のため書き込み権限が必要）
 """
 import logging
 import os
@@ -22,7 +22,8 @@ from datetime import datetime, timezone as dt_timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+# 書き込みも行うため calendar スコープ（フルアクセス）を使用
+SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 try:
     from google.oauth2 import service_account
@@ -35,7 +36,7 @@ except ImportError:
 class RakumoSyncService:
     """
     サービスアカウント認証で Google Calendar API にアクセスし、
-    Rakumo の会議室予約を取得・比較するサービスクラス。
+    Rakumo の会議室予約を取得・比較・書き込みするサービスクラス。
     """
 
     def __init__(self):
@@ -72,6 +73,123 @@ class RakumoSyncService:
             self.error_message = f"サービスアカウント認証に失敗しました: {e}"
             return None
 
+    def _build_event_body(self, reservation) -> dict:
+        """予約オブジェクトから Google Calendar イベントの body を生成する"""
+        from django.utils.timezone import localtime
+
+        if reservation.is_all_day:
+            date_str = localtime(reservation.start_at).strftime('%Y-%m-%d')
+            body = {
+                'summary':     reservation.title,
+                'description': reservation.notes or '',
+                'start': {'date': date_str},
+                'end':   {'date': date_str},
+            }
+        else:
+            body = {
+                'summary':     reservation.title,
+                'description': reservation.notes or '',
+                'start': {
+                    'dateTime': localtime(reservation.start_at).isoformat(),
+                    'timeZone': 'Asia/Tokyo',
+                },
+                'end': {
+                    'dateTime': localtime(reservation.end_at).isoformat(),
+                    'timeZone': 'Asia/Tokyo',
+                },
+            }
+
+        if reservation.participants:
+            body['description'] += f'\n\n【予約者】{reservation.reserved_by}\n【参加者】\n{reservation.participants}'
+        else:
+            body['description'] += f'\n\n【予約者】{reservation.reserved_by}'
+
+        return body
+
+    # ──────────────────────────────────────────────
+    # 書き込み系（片方向自動連携: このシステム → Rakumo）
+    # ──────────────────────────────────────────────
+
+    def create_event(self, reservation) -> None:
+        """
+        予約をRakumo（リソースカレンダー）に新規作成する。
+        成功時は reservation.rakumo_event_id に Google イベントIDを保存する。
+        """
+        if self.no_op:
+            return
+        calendar_id = reservation.room.google_calendar_id
+        if not calendar_id:
+            return  # カレンダーIDが未設定の会議室はスキップ
+
+        try:
+            svc = self._get_service()
+            if svc is None:
+                return
+            event = svc.events().insert(
+                calendarId=calendar_id,
+                body=self._build_event_body(reservation),
+            ).execute()
+            reservation.rakumo_event_id = event.get('id', '')
+            reservation.save(update_fields=['rakumo_event_id'])
+            logger.info(f"RakumoSync create_event: reservation={reservation.pk} event={reservation.rakumo_event_id}")
+        except Exception as e:
+            logger.warning(f"RakumoSync create_event failed (reservation={reservation.pk}): {e}")
+
+    def update_event(self, reservation) -> None:
+        """
+        Rakumo側の予約イベントを更新する。
+        rakumo_event_id が未設定の場合は新規作成にフォールバックする。
+        """
+        if self.no_op:
+            return
+        calendar_id = reservation.room.google_calendar_id
+        if not calendar_id:
+            return
+
+        if not reservation.rakumo_event_id:
+            return self.create_event(reservation)
+
+        try:
+            svc = self._get_service()
+            if svc is None:
+                return
+            svc.events().patch(
+                calendarId=calendar_id,
+                eventId=reservation.rakumo_event_id,
+                body=self._build_event_body(reservation),
+            ).execute()
+            logger.info(f"RakumoSync update_event: reservation={reservation.pk}")
+        except Exception as e:
+            logger.warning(f"RakumoSync update_event failed (reservation={reservation.pk}): {e}")
+
+    def delete_event(self, reservation) -> None:
+        """
+        Rakumo側の予約イベントを削除する。
+        """
+        if self.no_op or not reservation.rakumo_event_id:
+            return
+        calendar_id = reservation.room.google_calendar_id
+        if not calendar_id:
+            return
+
+        try:
+            svc = self._get_service()
+            if svc is None:
+                return
+            svc.events().delete(
+                calendarId=calendar_id,
+                eventId=reservation.rakumo_event_id,
+            ).execute()
+            reservation.rakumo_event_id = ''
+            reservation.save(update_fields=['rakumo_event_id'])
+            logger.info(f"RakumoSync delete_event: reservation={reservation.pk}")
+        except Exception as e:
+            logger.warning(f"RakumoSync delete_event failed (reservation={reservation.pk}): {e}")
+
+    # ──────────────────────────────────────────────
+    # 読み取り系（差分確認）
+    # ──────────────────────────────────────────────
+
     def test_connection(self, calendar_id: str) -> dict:
         """
         指定したカレンダーIDへの接続テストを行う。
@@ -79,9 +197,9 @@ class RakumoSyncService:
         Returns:
             {
                 'success': bool,
-                'calendar_name': str,   # カレンダー名（成功時）
-                'event_count': int,     # 直近7日間のイベント件数（成功時）
-                'error': str,           # エラーメッセージ（失敗時）
+                'calendar_name': str,
+                'event_count': int,
+                'error': str,
             }
         """
         if self.no_op:
@@ -94,11 +212,9 @@ class RakumoSyncService:
             if svc is None:
                 return {'success': False, 'error': self.error_message or 'API サービスの初期化に失敗しました。'}
 
-            # カレンダー情報を取得
             cal = svc.calendars().get(calendarId=calendar_id).execute()
             calendar_name = cal.get('summary', calendar_id)
 
-            # 直近7日間のイベント件数を確認
             from django.utils import timezone
             now = timezone.now()
             events_result = svc.events().list(
@@ -118,11 +234,11 @@ class RakumoSyncService:
         except Exception as e:
             err_str = str(e)
             if '403' in err_str:
-                msg = "アクセス権限がありません。ドメイン全体の委任設定またはカレンダー共有設定を確認してください。"
+                msg = "アクセス権限がありません。カレンダーの共有設定（「予定の編集」権限）を確認してください。"
             elif '404' in err_str:
-                msg = "カレンダーが見つかりません。カレンダーIDを確認してください。"
+                msg = "カレンダーが見つかりません。カレンダーIDまたは共有設定を確認してください。"
             elif '401' in err_str:
-                msg = "認証エラーです。サービスアカウントJSONとGOOGLE_DELEGATED_ADMINを確認してください。"
+                msg = "認証エラーです。サービスアカウントJSONを確認してください。"
             else:
                 msg = f"接続エラー: {err_str}"
             logger.warning(f"RakumoSync test_connection failed for {calendar_id}: {e}")
@@ -131,16 +247,6 @@ class RakumoSyncService:
     def fetch_rakumo_events(self, calendar_id: str, date_from: datetime, date_to: datetime) -> list:
         """
         Rakumo（Google Calendar リソース）から指定期間の予約を取得する。
-
-        Returns:
-            list of {
-                'id': str,
-                'title': str,
-                'start': datetime,
-                'end': datetime,
-                'organizer': str,
-                'is_all_day': bool,
-            }
         """
         if self.no_op or not calendar_id:
             return []
@@ -198,16 +304,6 @@ class RakumoSyncService:
     def compare_with_local(self, room, date_from: datetime, date_to: datetime) -> dict:
         """
         Rakumo側の予約とローカルDBの予約を比較し差分を返す。
-
-        Returns:
-            {
-                'rakumo_events':   list,
-                'local_events':    list,
-                'only_in_rakumo':  list,
-                'only_in_local':   list,
-                'matched':         list,
-                'error':           str or None,
-            }
         """
         from reservations.models import Reservation
 
@@ -217,10 +313,8 @@ class RakumoSyncService:
         if not room.google_calendar_id:
             return {'error': 'この会議室にはGoogle カレンダーIDが設定されていません。'}
 
-        # Rakumo側取得
         rakumo_events = self.fetch_rakumo_events(room.google_calendar_id, date_from, date_to)
 
-        # ローカル側取得
         local_qs = Reservation.objects.filter(
             room=room,
             is_cancelled=False,
@@ -237,7 +331,6 @@ class RakumoSyncService:
             'is_all_day': r.is_all_day,
         } for r in local_qs]
 
-        # 照合キー：タイトル + 開始時刻（分単位、JST）
         def make_key(title, start_dt):
             from zoneinfo import ZoneInfo
             jst = ZoneInfo('Asia/Tokyo')

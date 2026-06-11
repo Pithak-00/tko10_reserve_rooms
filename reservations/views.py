@@ -32,6 +32,8 @@ except ImportError:
         def update_event(self, r): pass
         def delete_event(self, r): pass
 
+from .services.rakumo_sync import RakumoSyncService
+
 logger = logging.getLogger(__name__)
 
 # google_auth_oauthlib は F-04-R09 Google 同期機能でのみ使用
@@ -461,6 +463,11 @@ class ReservationCreateView(CreateView):
             ),
         )
         GoogleSyncService(self.request.user).create_event(reservation)
+        # Rakumo自動連携（このシステム → Rakumo）
+        try:
+            RakumoSyncService().create_event(reservation)
+        except Exception as e:
+            logger.warning(f'Rakumo sync on create failed: {e}')
         return redirect(self.get_success_url())
 
     def get_success_url(self):
@@ -540,6 +547,11 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
             GoogleSyncService(self.request.user).update_event(self.object)
         except Exception as e:
             logger.warning(f'Google sync on update failed: {e}')
+        # Rakumo自動連携（このシステム → Rakumo）
+        try:
+            RakumoSyncService().update_event(self.object)
+        except Exception as e:
+            logger.warning(f'Rakumo sync on update failed: {e}')
         return redirect(self.get_success_url())
 
     def get_success_url(self):
@@ -568,6 +580,11 @@ def reservation_cancel(request, pk):
         GoogleSyncService(request.user).delete_event(reservation)
     except Exception as e:
         logger.warning(f'Google sync on cancel failed: {e}')
+    # Rakumo自動連携（このシステム → Rakumo）
+    try:
+        RakumoSyncService().delete_event(reservation)
+    except Exception as e:
+        logger.warning(f'Rakumo sync on cancel failed: {e}')
 
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'calendar'
     return redirect(next_url)
@@ -746,6 +763,11 @@ class ReservationMoveView(LoginRequiredMixin, View):
             GoogleSyncService(request.user).update_event(reservation)
         except Exception as e:
             logger.warning(f'Google sync failed: {e}')
+        # Rakumo自動連携（このシステム → Rakumo）
+        try:
+            RakumoSyncService().update_event(reservation)
+        except Exception as e:
+            logger.warning(f'Rakumo sync on move failed: {e}')
 
         color = reservation.color or '#3182CE'
         return JsonResponse({'id': reservation.id, 'color': color}, status=200)
