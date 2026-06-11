@@ -920,10 +920,10 @@ class RakumoDiffView(StaffRequiredMixin, View):
         room = get_object_or_404(Room, pk=room_id)
 
         try:
-            import pytz
-            jst = pytz.timezone('Asia/Tokyo')
-            dt_from = jst.localize(datetime.fromisoformat(date_from_str))
-            dt_to   = jst.localize(datetime.fromisoformat(date_to_str) + timedelta(days=1))
+            from zoneinfo import ZoneInfo
+            jst = ZoneInfo('Asia/Tokyo')
+            dt_from = datetime.fromisoformat(date_from_str).replace(tzinfo=jst)
+            dt_to   = (datetime.fromisoformat(date_to_str) + timedelta(days=1)).replace(tzinfo=jst)
         except Exception:
             messages.error(request, '日付の形式が正しくありません。')
             return render(request, self.template_name, context)
