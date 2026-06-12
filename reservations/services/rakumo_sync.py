@@ -5,16 +5,18 @@ Rakumo（Google Workspace リソースカレンダー）と今回の予約シス
 比較・同期するためのサービスクラス。
 
 【認証方式】
-  サービスアカウント認証（credentials/service_account.json）を使用します。
-  ユーザーごとのOAuth認証・GOOGLE_DELEGATED_ADMIN 設定は不要です。
+  サービスアカウント認証 + ドメイン全体の委任を使用します。
 
   必要な設定（settings.py または .env）：
     GOOGLE_SERVICE_ACCOUNT_FILE  ... JSONキーのパス（デフォルト: credentials/service_account.json）
+    GOOGLE_DELEGATED_ADMIN       ... なりすます管理者メール（例: admin@yourdomain.com）
 
 【Google Workspace側の事前設定】
-  各会議室のリソースカレンダーをサービスアカウントのメールアドレスに直接共有する。
-    roomreserve@roomreserve-498906.iam.gserviceaccount.com
-  権限：「予定の編集」（自動連携のため書き込み権限が必要）
+  admin.google.com → セキュリティ → APIの制御 → ドメイン全体の委任 にて
+  クライアントIDとスコープを登録済みであること。
+    スコープ: https://www.googleapis.com/auth/calendar
+              https://www.googleapis.com/auth/admin.directory.resource.calendar
+  GOOGLE_DELEGATED_ADMIN に指定するアカウントは Google Workspace 管理者であること。
 """
 import logging
 import os
@@ -35,7 +37,7 @@ except ImportError:
 
 class RakumoSyncService:
     """
-    サービスアカウント認証で Google Calendar API にアクセスし、
+    サービスアカウント認証（ドメイン全体委任）で Google Calendar API にアクセスし、
     Rakumo の会議室予約を取得・比較・書き込みするサービスクラス。
     """
 
@@ -49,6 +51,7 @@ class RakumoSyncService:
 
         from django.conf import settings
         sa_file = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', '')
+        delegated_admin = getattr(settings, 'GOOGLE_DELEGATED_ADMIN', '')
 
         if not sa_file or not os.path.exists(sa_file):
             self.error_message = (
@@ -57,16 +60,24 @@ class RakumoSyncService:
             )
             return
 
+        if not delegated_admin:
+            self.error_message = (
+                "GOOGLE_DELEGATED_ADMIN が設定されていません。\n"
+                "settings.py に管理者メールアドレスを設定してください。"
+            )
+            return
+
         self._sa_file = sa_file
+        self._delegated_admin = delegated_admin
         self.no_op = False
 
     def _get_service(self):
-        """サービスアカウント認証済みの Google Calendar API サービスを返す"""
+        """ドメイン全体委任によるサービスアカウント認証済みの Google Calendar API サービスを返す"""
         try:
             credentials = service_account.Credentials.from_service_account_file(
                 self._sa_file,
                 scopes=SCOPES,
-            )
+            ).with_subject(self._delegated_admin)
             return build('calendar', 'v3', credentials=credentials)
         except Exception as e:
             logger.error(f"RakumoSync: サービスアカウント認証失敗: {e}")

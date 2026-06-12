@@ -146,17 +146,18 @@ GOOGLE_REDIRECT_URI  = os.environ.get(
 GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
 # ─────────────────────────────────────────────────────────
-# Rakumo連携: サービスアカウント認証
+# Rakumo連携: サービスアカウント認証（ドメイン全体委任）
 # ─────────────────────────────────────────────────────────
 # credentials/service_account.json にJSONキーを配置してください
 # （credentials/ フォルダは .gitignore 済み）
-# ドメイン全体の委任・GOOGLE_DELEGATED_ADMIN は不要です。
-# 各会議室のリソースカレンダーをサービスアカウントのメールに直接共有してください：
-#   roomreserve@roomreserve-498906.iam.gserviceaccount.com
+# ドメイン全体の委任を使用します。admin.google.com でスコープ登録済みであること。
 GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get(
     'GOOGLE_SERVICE_ACCOUNT_FILE',
     os.path.join(BASE_DIR, 'credentials', 'service_account.json')
 )
+# なりすます Google Workspace 管理者アカウント（ドメイン全体委任用）
+# .env に GOOGLE_DELEGATED_ADMIN=xxx@yourdomain.com を設定してください
+GOOGLE_DELEGATED_ADMIN = os.environ.get('GOOGLE_DELEGATED_ADMIN', '')
 
 # qq python-dotenv で .env を読み込む（manage.py と同階層に.env）q
 # pip install python-dotenv
