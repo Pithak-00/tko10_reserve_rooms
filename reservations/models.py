@@ -224,6 +224,39 @@ class Reservation(models.Model):
 
 
 # ──────────────────────────────────────────────
+# 重複アラート
+# ──────────────────────────────────────────────
+class DuplicateAlert(models.Model):
+    """同一会議室・時間帯に複数の予約が重複した場合のアラート"""
+
+    room = models.ForeignKey(
+        Room, on_delete=models.CASCADE,
+        related_name='duplicate_alerts', verbose_name='会議室',
+    )
+    reservation_a = models.ForeignKey(
+        'Reservation', on_delete=models.CASCADE,
+        related_name='alert_as', verbose_name='予約A',
+    )
+    reservation_b = models.ForeignKey(
+        'Reservation', on_delete=models.CASCADE,
+        related_name='alert_bs', verbose_name='予約B',
+    )
+    is_resolved = models.BooleanField(default=False, verbose_name='解消済み')
+    detected_at = models.DateTimeField(auto_now_add=True, verbose_name='検知日時')
+    resolved_at = models.DateTimeField(null=True, blank=True, verbose_name='解消日時')
+
+    class Meta:
+        db_table = 'duplicate_alerts'
+        unique_together = [('reservation_a', 'reservation_b')]
+        ordering = ['-detected_at']
+        verbose_name = '重複アラート'
+        verbose_name_plural = '重複アラート'
+
+    def __str__(self):
+        return f"重複: {self.room.name} [{self.reservation_a.title} / {self.reservation_b.title}]"
+
+
+# ──────────────────────────────────────────────
 # 操作ログ
 # ──────────────────────────────────────────────
 class OperationLog(models.Model):

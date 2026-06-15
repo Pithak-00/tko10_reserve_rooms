@@ -71,6 +71,21 @@ class Command(BaseCommand):
             total['updated']   += u
             total['cancelled'] += ca
 
+        # 同期後に重複チェックを実行
+        from reservations.models import Reservation
+        from reservations.services.duplicate_check import detect_and_save, resolve_if_no_longer_overlapping
+        active_reservations = Reservation.objects.filter(
+            is_cancelled=False,
+            is_all_day=False,
+            room__in=rooms_qs,
+        )
+        dup_count = 0
+        for r in active_reservations:
+            resolve_if_no_longer_overlapping(r)
+            dup_count += len(detect_and_save(r))
+        if dup_count:
+            self.stdout.write(f'⚠ 重複アラート: {dup_count}件検知')
+
         elapsed = (timezone.now() - started_at).total_seconds()
         self.stdout.write(
             f'\n完了 ({elapsed:.1f}秒) — '

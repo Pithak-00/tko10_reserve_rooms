@@ -842,11 +842,33 @@ class RakumoSyncView(StaffRequiredMixin, View):
     """
     template_name = 'admin_panel/rakumo_sync.html'
 
-    def get(self, request):
+    def _get_context(self):
+        from reservations.models import DuplicateAlert
         rooms = Room.objects.filter(is_active=True).order_by('name')
-        return render(request, self.template_name, {'rooms': rooms})
+        alerts = DuplicateAlert.objects.filter(
+            is_resolved=False,
+        ).select_related(
+            'room', 'reservation_a', 'reservation_b',
+            'reservation_a__user', 'reservation_b__user',
+        )
+        return {'rooms': rooms, 'alerts': alerts, 'unresolved_count': alerts.count()}
+
+    def get(self, request):
+        return render(request, self.template_name, self._get_context())
 
     def post(self, request):
+        # 解消ボタンの処理
+        alert_id = request.POST.get('alert_id')
+        if alert_id:
+            from reservations.models import DuplicateAlert
+            from django.utils import timezone as dj_tz
+            DuplicateAlert.objects.filter(pk=alert_id).update(
+                is_resolved=True, resolved_at=dj_tz.now(),
+            )
+            messages.success(request, 'アラートを解消済みにしました。')
+            return redirect('rakumo_sync')
+
+        # カレンダーID保存
         rooms = Room.objects.filter(is_active=True)
         updated = 0
         for room in rooms:
@@ -1000,3 +1022,5 @@ class RakumoDiffView(StaffRequiredMixin, View):
             'has_result':     True,
         })
         return render(request, self.template_name, context)
+
+
