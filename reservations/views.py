@@ -434,6 +434,28 @@ class ReservationCreateView(CreateView):
         recurrence_rule = form.cleaned_data.get('recurrence_rule', '')
         reservation.recurrence_rule = recurrence_rule
 
+        # ── Rakumo事前競合チェック ──────────────────────────────
+        if not reservation.is_all_day:
+            try:
+                rakumo_svc = RakumoSyncService()
+                room_obj = Room.objects.get(pk=reservation.room_id)
+                if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                    conflicts = rakumo_svc.check_conflict_with_rakumo(
+                        room_obj.google_calendar_id,
+                        reservation.start_at,
+                        reservation.end_at,
+                    )
+                    if conflicts:
+                        titles = '、'.join(ev['title'] for ev in conflicts[:3])
+                        form.add_error(
+                            None,
+                            f'Rakumo（本社）に同じ時間帯の予約があります：{titles}。'
+                            '時間帯を変更してください。'
+                        )
+                        return self.form_invalid(form)
+            except Exception as e:
+                logger.warning(f'Rakumo conflict check on create failed: {e}')
+
         with transaction.atomic():
             # 会議室行をロックして同時リクエストの割り込みを防ぐ
             Room.objects.select_for_update().get(pk=reservation.room_id)
@@ -513,6 +535,29 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
         # 変更前の値を保存（detail 生成用）
         old = Reservation.objects.get(pk=reservation.pk)
 
+        # ── Rakumo事前競合チェック ──────────────────────────────
+        if not reservation.is_all_day:
+            try:
+                rakumo_svc = RakumoSyncService()
+                room_obj = Room.objects.get(pk=reservation.room_id)
+                if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                    conflicts = rakumo_svc.check_conflict_with_rakumo(
+                        room_obj.google_calendar_id,
+                        reservation.start_at,
+                        reservation.end_at,
+                        exclude_rakumo_event_id=reservation.rakumo_event_id or '',
+                    )
+                    if conflicts:
+                        titles = '、'.join(ev['title'] for ev in conflicts[:3])
+                        form.add_error(
+                            None,
+                            f'Rakumo（本社）に同じ時間帯の予約があります：{titles}。'
+                            '時間帯を変更してください。'
+                        )
+                        return self.form_invalid(form)
+            except Exception as e:
+                logger.warning(f'Rakumo conflict check on update failed: {e}')
+
         with transaction.atomic():
             Room.objects.select_for_update().get(pk=reservation.room_id)
             error_msg = _conflict_exists(
@@ -578,6 +623,13 @@ def reservation_cancel(request, pk):
 
     if reservation.user != request.user and not request.user.is_staff:
         return HttpResponseForbidden("この予約をキャンセルする権限がありません")
+
+    # Rakumo発信予約は管理者でもキャンセル不可
+    if reservation.is_rakumo_source:
+        return HttpResponseForbidden(
+            "この予約はRakumo（本社）で作成された予約のため、このシステムからはキャンセルできません。"
+            "Rakumo側でキャンセルしてください。"
+        )
 
     reservation.is_cancelled = True
     reservation.save()
@@ -699,7 +751,74 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
                 'can_edit': res.user == request.user or request.user.is_staff,
                 'editable': res.user == request.user or request.user.is_staff,
                 'allDay': res.is_all_day,
+                'is_rakumo': False,
             })
+
+        # ── Rakumoイベントをリアルタイム取得して追加（グレー表示）──
+        try:
+            rakumo_svc = RakumoSyncService()
+            if not rakumo_svc.no_op:
+                # フィルター対象の会議室IDセットを特定
+                if room_ids_str is not None and room_ids_str != '':
+                    filtered_room_ids = set(
+                        int(x) for x in room_ids_str.split(',') if x.strip().isdigit()
+                    )
+                else:
+                    filtered_room_ids = None  # フィルターなし = 全室対象
+
+                # google_calendar_id が設定されている会議室からRakumoイベントを取得
+                rooms_with_cal = Room.objects.filter(
+                    is_active=True, google_calendar_id__gt=''
+                )
+                if filtered_room_ids is not None:
+                    rooms_with_cal = rooms_with_cal.filter(id__in=filtered_room_ids)
+
+                # start/end を aware datetime に変換
+                if start.tzinfo is None:
+                    start_aware = start.replace(tzinfo=dt_tz.utc)
+                else:
+                    start_aware = start
+                if end.tzinfo is None:
+                    end_aware = end.replace(tzinfo=dt_tz.utc)
+                else:
+                    end_aware = end
+
+                # ローカルDBに取り込み済みのRakumoイベントIDセット（重複表示防止）
+                existing_rakumo_ids = set(
+                    Reservation.objects.filter(
+                        is_cancelled=False,
+                        is_rakumo_source=True,
+                        start_at__lt=end_aware,
+                        end_at__gt=start_aware,
+                    ).values_list('rakumo_event_id', flat=True)
+                )
+
+                for room in rooms_with_cal:
+                    rakumo_events = rakumo_svc.get_events_for_display(
+                        room.google_calendar_id, start_aware, end_aware
+                    )
+                    for ev in rakumo_events:
+                        if ev['id'] in existing_rakumo_ids:
+                            continue  # 既にDBに取り込み済みのものはスキップ
+                        events.append({
+                            'id': f'rakumo_{ev["id"]}',
+                            'title': f'[Rakumo] {ev["title"]}',
+                            'start': localtime(ev['start']).isoformat(),
+                            'end':   localtime(ev['end']).isoformat(),
+                            'room_id': room.id,
+                            'room_name': room.name,
+                            'color': '#718096',        # グレー
+                            'textColor': '#FFFFFF',
+                            'reserved_by': ev.get('organizer', ''),
+                            'is_owner': False,
+                            'can_edit': False,
+                            'editable': False,
+                            'allDay': ev['is_all_day'],
+                            'is_rakumo': True,
+                        })
+        except Exception as e:
+            logger.warning(f'CalendarEventsAPI: Rakumoイベント取得失敗: {e}')
+
         return JsonResponse(events, safe=False)
     
 

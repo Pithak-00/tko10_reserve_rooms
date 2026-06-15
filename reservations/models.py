@@ -214,6 +214,13 @@ class Reservation(models.Model):
         verbose_name='Rakumo イベントID'
     )
 
+    # Rakumo連携: この予約がRakumo（本社）側で作成された予約かどうか
+    is_rakumo_source = models.BooleanField(
+        default=False,
+        verbose_name='Rakumo発信予約',
+        help_text='Rakumo（本社Google Calendar）から同期された予約の場合 True。管理者でもキャンセル不可。',
+    )
+
     class Meta:
         db_table = "reservations"
         verbose_name = "予約"

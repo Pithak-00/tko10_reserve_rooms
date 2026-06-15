@@ -486,6 +486,7 @@ class RakumoSyncService:
                     end_at=event['end'],
                     is_all_day=event['is_all_day'],
                     rakumo_event_id=event_id,
+                    is_rakumo_source=True,
                     notes='※ Rakumoから自動同期',
                 )
                 created += 1
@@ -495,3 +496,58 @@ class RakumoSyncService:
                 )
 
         return {'created': created, 'updated': updated, 'cancelled': cancelled, 'error': None}
+
+    # ──────────────────────────────────────────────
+    # 事前競合チェック（このシステム → 登録・変更前）
+    # ──────────────────────────────────────────────
+
+    def check_conflict_with_rakumo(
+        self,
+        calendar_id: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        exclude_rakumo_event_id: str = '',
+    ) -> list:
+        """
+        指定した時間帯がRakumo（Google Calendar）の予約と重複しているか確認する。
+
+        Args:
+            calendar_id:              チェック対象の Google カレンダーID
+            start_dt / end_dt:        チェックする時間帯（aware datetime）
+            exclude_rakumo_event_id:  更新時に除外するRakumoイベントID
+
+        Returns:
+            重複しているRakumoイベントのリスト。空リスト = 競合なし。
+        """
+        if self.no_op or not calendar_id:
+            return []
+
+        # 前後5分の余裕を持たせて取得
+        search_from = start_dt - timedelta(minutes=5)
+        search_to   = end_dt   + timedelta(minutes=5)
+
+        events = self.fetch_rakumo_events(calendar_id, search_from, search_to)
+
+        conflicts = []
+        for ev in events:
+            if exclude_rakumo_event_id and ev['id'] == exclude_rakumo_event_id:
+                continue
+            # 時間帯が重複しているか（終了時刻が相手の開始以前、または開始時刻が相手の終了以降なら重複しない）
+            if ev['start'] < end_dt and ev['end'] > start_dt:
+                conflicts.append(ev)
+
+        return conflicts
+
+    def get_events_for_display(
+        self,
+        calendar_id: str,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> list:
+        """
+        カレンダー表示用にRakumoイベントを取得する。
+        fetch_rakumo_events のラッパーで、エラー時は空リストを返す。
+        """
+        if self.no_op or not calendar_id:
+            return []
+        return self.fetch_rakumo_events(calendar_id, start_dt, end_dt)
