@@ -150,6 +150,23 @@
       <a href="{% url 'rakumo_diff' %}" class="nav-link-btn">② 差分確認</a>
     </div>
 
+    <!-- Rakumo→このシステム 手動同期 -->
+    <div class="rakumo-card" style="border-left: 4px solid #48bb78;">
+      <h2>🔄 Rakumo → このシステムへの手動同期</h2>
+      <p style="font-size:13px; color:#4a5568; margin:0 0 14px;">
+        Rakumoで直接作成・変更・キャンセルされた予約を、このシステムに取り込みます。<br>
+        （自動同期は毎時実行されます。今すぐ反映したい場合は下のボタンを押してください）
+      </p>
+      <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+        <button type="button" id="syncNowBtn" onclick="syncNow()"
+                style="padding:9px 20px; background:#38a169; color:#fff; border:none;
+                       border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">
+          今すぐ同期する
+        </button>
+        <span id="syncResult" style="font-size:13px; color:#4a5568;"></span>
+      </div>
+    </div>
+
     {% if messages %}
       {% for msg in messages %}
         <div class="alert alert-{{ msg.tags }}" style="margin-bottom:16px; padding:12px 16px; border-radius:6px;
@@ -292,6 +309,44 @@
         }
       });
     });
+
+    // 手動同期
+    function syncNow() {
+      const btn = document.getElementById('syncNowBtn');
+      const result = document.getElementById('syncResult');
+      btn.disabled = true;
+      btn.textContent = '同期中…';
+      result.textContent = '';
+      result.style.color = '#4a5568';
+
+      fetch('{% url "rakumo_sync_from_rakumo" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CSRF_TOKEN,
+        },
+        body: JSON.stringify({}),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          result.textContent =
+            `✓ 同期完了 — 新規: ${data.created}件 / 更新: ${data.updated}件 / キャンセル: ${data.cancelled}件`;
+          result.style.color = '#276749';
+        } else {
+          result.textContent = `✗ ${data.error}`;
+          result.style.color = '#9b2c2c';
+        }
+      })
+      .catch(() => {
+        result.textContent = '通信エラー';
+        result.style.color = '#9b2c2c';
+      })
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = '今すぐ同期する';
+      });
+    }
   </script>
 </body>
 </html>

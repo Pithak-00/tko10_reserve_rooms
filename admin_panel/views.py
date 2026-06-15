@@ -882,6 +882,59 @@ class RakumoTestConnectionView(StaffRequiredMixin, View):
         return JsonResponse(result)
 
 
+class RakumoSyncFromRakumoView(StaffRequiredMixin, View):
+    """
+    AJAX: Rakumo → このシステムへの手動同期を即時実行する。
+    POST body: { room_id: int (省略時は全会議室) }
+    """
+    def post(self, request):
+        from reservations.services.rakumo_sync import RakumoSyncService
+        from accounts.models import User
+
+        try:
+            data = json.loads(request.body)
+            room_id = data.get('room_id')
+        except Exception:
+            room_id = None
+
+        admin_user = (
+            User.objects.filter(is_superuser=True).first()
+            or User.objects.filter(role='admin').first()
+        )
+        if not admin_user:
+            return JsonResponse({'success': False, 'error': '管理者ユーザーが見つかりません。'})
+
+        rooms = Room.objects.filter(is_active=True).exclude(google_calendar_id='')
+        if room_id:
+            rooms = rooms.filter(pk=room_id)
+
+        svc = RakumoSyncService()
+        if svc.no_op:
+            return JsonResponse({'success': False, 'error': svc.error_message})
+
+        total = {'created': 0, 'updated': 0, 'cancelled': 0}
+        errors = []
+        for room in rooms:
+            result = svc.sync_to_local(room, admin_user, days_ahead=30)
+            if result.get('error'):
+                errors.append(f'{room.name}: {result["error"]}')
+            else:
+                total['created']   += result['created']
+                total['updated']   += result['updated']
+                total['cancelled'] += result['cancelled']
+
+        if errors and not any(total.values()):
+            return JsonResponse({'success': False, 'error': '\n'.join(errors)})
+
+        return JsonResponse({
+            'success': True,
+            'created':   total['created'],
+            'updated':   total['updated'],
+            'cancelled': total['cancelled'],
+            'errors':    errors,
+        })
+
+
 class RakumoDiffView(StaffRequiredMixin, View):
     """
     Rakumo側と今回のシステムの予約差分を確認するページ。

@@ -366,3 +366,132 @@ class RakumoSyncService:
             'matched':        [e for k, e in rakumo_keys.items() if k in local_keys],
             'error':          None,
         }
+
+    # ──────────────────────────────────────────────
+    # Rakumo → このシステム 取り込みバッチ
+    # ──────────────────────────────────────────────
+
+    def sync_to_local(self, room, admin_user, days_ahead: int = 30) -> dict:
+        """
+        Rakumo（Google Calendar）の予約をこのシステムに取り込む。
+
+        処理内容:
+          1. rakumo_event_id で紐付く予約がRakumoで変更されていれば更新
+          2. rakumo_event_id で紐付く予約がRakumoで削除されていればキャンセル
+          3. このシステムに存在しないRakumoイベントを新規予約として作成
+
+        Returns:
+            {'created': int, 'updated': int, 'cancelled': int, 'error': str or None}
+        """
+        from reservations.models import Reservation
+        from django.utils import timezone as dj_timezone
+
+        if self.no_op:
+            return {'created': 0, 'updated': 0, 'cancelled': 0,
+                    'error': self.error_message or '設定エラー'}
+
+        if not room.google_calendar_id:
+            return {'created': 0, 'updated': 0, 'cancelled': 0,
+                    'error': 'Google カレンダーIDが設定されていません。'}
+
+        now = dj_timezone.now()
+        date_from = now - timedelta(hours=1)   # 直前の変更も拾うため1時間前から
+        date_to   = now + timedelta(days=days_ahead)
+
+        try:
+            rakumo_events = self.fetch_rakumo_events(
+                room.google_calendar_id, date_from, date_to
+            )
+        except Exception as e:
+            return {'created': 0, 'updated': 0, 'cancelled': 0, 'error': str(e)}
+
+        rakumo_map = {e['id']: e for e in rakumo_events}
+
+        # rakumo_event_id で紐付いているローカル予約
+        local_linked = {
+            r.rakumo_event_id: r
+            for r in Reservation.objects.filter(
+                room=room,
+                is_cancelled=False,
+                start_at__gte=date_from,
+                start_at__lt=date_to,
+                rakumo_event_id__gt='',
+            )
+        }
+
+        created = updated = cancelled = 0
+
+        # ── Case 1: Rakumoで変更・削除された予約の反映 ──
+        for rakumo_id, reservation in local_linked.items():
+            if rakumo_id not in rakumo_map:
+                # Rakumoで削除された → キャンセル
+                reservation.is_cancelled = True
+                reservation.save(update_fields=['is_cancelled'])
+                cancelled += 1
+                logger.info(
+                    f"RakumoSync←: キャンセル reservation={reservation.pk} "
+                    f"(Rakumoから削除)"
+                )
+            else:
+                # Rakumoで変更されたか確認
+                event = rakumo_map[rakumo_id]
+                fields_changed = []
+                if reservation.title != event['title']:
+                    reservation.title = event['title']
+                    fields_changed.append('title')
+                if reservation.start_at != event['start']:
+                    reservation.start_at = event['start']
+                    fields_changed.append('start_at')
+                if reservation.end_at != event['end']:
+                    reservation.end_at = event['end']
+                    fields_changed.append('end_at')
+                if fields_changed:
+                    reservation.save(update_fields=fields_changed)
+                    updated += 1
+                    logger.info(
+                        f"RakumoSync←: 更新 reservation={reservation.pk} "
+                        f"変更項目={fields_changed}"
+                    )
+
+        # ── Case 2: Rakumoにあってローカルにないイベントを新規作成 ──
+        for event_id, event in rakumo_map.items():
+            if event_id in local_linked:
+                continue  # 既に紐付き済みはスキップ
+
+            # タイトル＋開始時刻で照合（このシステムから連携したが未リンクの場合）
+            existing = Reservation.objects.filter(
+                room=room,
+                is_cancelled=False,
+                title=event['title'],
+                start_at=event['start'],
+                rakumo_event_id='',
+            ).first()
+
+            if existing:
+                # 既存予約にrakumo_event_idを紐付け
+                existing.rakumo_event_id = event_id
+                existing.save(update_fields=['rakumo_event_id'])
+                logger.info(
+                    f"RakumoSync←: 紐付け reservation={existing.pk} "
+                    f"event={event_id}"
+                )
+            else:
+                # Rakumoで直接作成された予約を新規登録
+                Reservation.objects.create(
+                    room=room,
+                    user=admin_user,
+                    reserved_by=event['organizer'] or 'Rakumo経由',
+                    title=event['title'],
+                    start_at=event['start'],
+                    end_at=event['end'],
+                    is_all_day=event['is_all_day'],
+                    rakumo_event_id=event_id,
+                    notes='※ Rakumoから自動同期',
+                )
+                created += 1
+                logger.info(
+                    f"RakumoSync←: 新規作成 event={event_id} "
+                    f"title={event['title']}"
+                )
+
+        return {'created': created, 'updated': updated, 'cancelled': cancelled, 'error': None}

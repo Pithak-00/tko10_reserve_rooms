@@ -12,4 +12,12 @@ fi
 
 python manage.py migrate
 
+# Rakumo同期バッチを毎時0分に実行するcronジョブを設定
+# ログは /workspace/logs/rakumo_sync.log に出力
+mkdir -p /workspace/logs
+printenv | grep -E '^(DJANGO_SETTINGS_MODULE|GOOGLE_|DEBUG|SECRET_KEY|ALLOWED_HOSTS|DATABASE_URL)' > /etc/cron_env
+echo "0 * * * * root cd /workspace && env $(cat /etc/cron_env | xargs) python manage.py sync_from_rakumo >> /workspace/logs/rakumo_sync.log 2>&1" > /etc/cron.d/rakumo_sync
+chmod 0644 /etc/cron.d/rakumo_sync
+cron
+
 exec python manage.py runserver 0.0.0.0:8000

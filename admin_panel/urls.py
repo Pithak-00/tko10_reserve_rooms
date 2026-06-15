@@ -7,6 +7,7 @@ from .views import (
     RoomToggleActiveView,
     RakumoSyncView,
     RakumoTestConnectionView,
+    RakumoSyncFromRakumoView,
     RakumoDiffView,
     UserListView,
     UserCreateView,
@@ -90,5 +91,6 @@ urlpatterns = [
     # Rakumo連携
     path('rakumo/',                        RakumoSyncView.as_view(),            name='rakumo_sync'),
     path('rakumo/test-connection/',        RakumoTestConnectionView.as_view(),  name='rakumo_test_connection'),
+    path('rakumo/sync-from-rakumo/',       RakumoSyncFromRakumoView.as_view(),  name='rakumo_sync_from_rakumo'),
     path('rakumo/diff/',                   RakumoDiffView.as_view(),            name='rakumo_diff'),
 ]
