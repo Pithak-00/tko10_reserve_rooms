@@ -115,6 +115,13 @@ class RakumoSyncService:
         else:
             body['description'] += f'\n\n【予約者】{reservation.reserved_by}'
 
+        # Rakumoカテゴリを「その他」に設定
+        body['extendedProperties'] = {
+            'shared': {
+                'eventType': 'other',
+            }
+        }
+
         return body
 
     # ──────────────────────────────────────────────
