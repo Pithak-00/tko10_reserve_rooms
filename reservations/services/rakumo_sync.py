@@ -453,28 +453,59 @@ class RakumoSyncService:
                         f"変更項目={fields_changed}"
                     )
 
-        # ── Case 2: Rakumoにあってローカルにないイベントを新規作成 ──
+        # ── Case 2: Rakumoにあってローカルにないイベントを照合・作成 ──
         for event_id, event in rakumo_map.items():
             if event_id in local_linked:
                 continue  # 既に紐付き済みはスキップ
 
-            # タイトル＋開始時刻で照合（このシステムから連携したが未リンクの場合）
+            # タイトル＋開始時刻で照合（未リンク or is_rakumo_source=True 両方を対象）
+            from django.db.models import Q
             existing = Reservation.objects.filter(
                 room=room,
                 is_cancelled=False,
-                title=event['title'],
                 start_at=event['start'],
-                rakumo_event_id='',
-            ).first()
+            ).filter(
+                Q(rakumo_event_id='') | Q(is_rakumo_source=True)
+            ).filter(title=event['title']).first()
 
             if existing:
-                # 既存予約にrakumo_event_idを紐付け
-                existing.rakumo_event_id = event_id
-                existing.save(update_fields=['rakumo_event_id'])
-                logger.info(
-                    f"RakumoSync←: 紐付け reservation={existing.pk} "
-                    f"event={event_id}"
-                )
+                # 既存予約を Rakumo 優先で差分更新
+                fields_changed = []
+
+                if existing.rakumo_event_id != event_id:
+                    existing.rakumo_event_id = event_id
+                    fields_changed.append('rakumo_event_id')
+
+                if not existing.is_rakumo_source:
+                    existing.is_rakumo_source = True
+                    fields_changed.append('is_rakumo_source')
+
+                if existing.end_at != event['end']:
+                    existing.end_at = event['end']
+                    fields_changed.append('end_at')
+
+                if existing.is_all_day != event['is_all_day']:
+                    existing.is_all_day = event['is_all_day']
+                    fields_changed.append('is_all_day')
+
+                if fields_changed:
+                    existing.save(update_fields=fields_changed)
+                    if 'rakumo_event_id' in fields_changed and len(fields_changed) == 1:
+                        logger.info(
+                            f"RakumoSync←: 紐付け reservation={existing.pk} "
+                            f"event={event_id}"
+                        )
+                    else:
+                        updated += 1
+                        logger.info(
+                            f"RakumoSync←: 更新（Case2照合） reservation={existing.pk} "
+                            f"変更項目={fields_changed}"
+                        )
+                else:
+                    logger.debug(
+                        f"RakumoSync←: 差分なし reservation={existing.pk} "
+                        f"event={event_id}"
+                    )
             else:
                 # Rakumoで直接作成された予約を新規登録
                 Reservation.objects.create(
