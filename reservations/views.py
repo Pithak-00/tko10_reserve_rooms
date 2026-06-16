@@ -500,26 +500,37 @@ class ReservationCreateView(CreateView):
         reservation.recurrence_rule = recurrence_rule
 
         # ── Rakumo事前競合チェック ──────────────────────────────
-        if not reservation.is_all_day:
-            try:
-                rakumo_svc = RakumoSyncService()
-                room_obj = Room.objects.get(pk=reservation.room_id)
-                if not rakumo_svc.no_op and room_obj.google_calendar_id:
+        try:
+            rakumo_svc = RakumoSyncService()
+            room_obj = Room.objects.get(pk=reservation.room_id)
+            if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                if reservation.is_all_day:
+                    target_date = localtime(reservation.start_at).date()
+                    conflicts = rakumo_svc.check_conflict_with_rakumo_allday(
+                        room_obj.google_calendar_id, target_date,
+                    )
+                    if conflicts:
+                        form.add_error(
+                            None,
+                            f'本社にその日の予約があります。'
+                            '日程を変更してください。'
+                        )
+                        return self.form_invalid(form)
+                else:
                     conflicts = rakumo_svc.check_conflict_with_rakumo(
                         room_obj.google_calendar_id,
                         reservation.start_at,
                         reservation.end_at,
                     )
                     if conflicts:
-                        titles = '、'.join(ev['title'] for ev in conflicts[:3])
                         form.add_error(
                             None,
-                            f'本社に同じ時間帯の予約があります：{titles}。'
+                            f'本社に同じ時間帯の予約があります。'
                             '時間帯を変更してください。'
                         )
                         return self.form_invalid(form)
-            except Exception as e:
-                logger.warning(f'Rakumo conflict check on create failed: {e}')
+        except Exception as e:
+            logger.warning(f'Rakumo conflict check on create failed: {e}')
 
         with transaction.atomic():
             # 会議室行をロックして同時リクエストの割り込みを防ぐ
@@ -595,11 +606,24 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
         old = Reservation.objects.get(pk=reservation.pk)
 
         # ── Rakumo事前競合チェック ──────────────────────────────
-        if not reservation.is_all_day:
-            try:
-                rakumo_svc = RakumoSyncService()
-                room_obj = Room.objects.get(pk=reservation.room_id)
-                if not rakumo_svc.no_op and room_obj.google_calendar_id:
+        try:
+            rakumo_svc = RakumoSyncService()
+            room_obj = Room.objects.get(pk=reservation.room_id)
+            if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                if reservation.is_all_day:
+                    target_date = localtime(reservation.start_at).date()
+                    conflicts = rakumo_svc.check_conflict_with_rakumo_allday(
+                        room_obj.google_calendar_id, target_date,
+                        exclude_rakumo_event_id=reservation.rakumo_event_id or '',
+                    )
+                    if conflicts:
+                        form.add_error(
+                            None,
+                            f'本社にその日の予約があります。'
+                            '日程を変更してください。'
+                        )
+                        return self.form_invalid(form)
+                else:
                     conflicts = rakumo_svc.check_conflict_with_rakumo(
                         room_obj.google_calendar_id,
                         reservation.start_at,
@@ -607,15 +631,14 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
                         exclude_rakumo_event_id=reservation.rakumo_event_id or '',
                     )
                     if conflicts:
-                        titles = '、'.join(ev['title'] for ev in conflicts[:3])
                         form.add_error(
                             None,
-                            f'本社に同じ時間帯の予約があります：{titles}。'
+                            f'本社に同じ時間帯の予約があります。'
                             '時間帯を変更してください。'
                         )
                         return self.form_invalid(form)
-            except Exception as e:
-                logger.warning(f'Rakumo conflict check on update failed: {e}')
+        except Exception as e:
+            logger.warning(f'Rakumo conflict check on update failed: {e}')
 
         with transaction.atomic():
             Room.objects.select_for_update().get(pk=reservation.room_id)
@@ -679,7 +702,7 @@ def reservation_cancel(request, pk):
     # Rakumo発信予約は管理者でもキャンセル不可
     if reservation.is_rakumo_source:
         return HttpResponseForbidden(
-            "この予約はRakumo（本社）で作成された予約のため、このシステムからはキャンセルできません。"
+            "この予約は本社で作成された予約のため、このシステムからはキャンセルできません。"
             "Rakumo側でキャンセルしてください。"
         )
 
@@ -848,11 +871,21 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
                     for ev in rakumo_events:
                         if ev['id'] in existing_rakumo_ids:
                             continue  # 既にDBに取り込み済みのものはスキップ
+
+                        # 終日イベントは YYYY-MM-DD 形式で渡す
+                        # （datetime 文字列だと FullCalendar が時刻付きイベントとして扱うため）
+                        if ev['is_all_day']:
+                            ev_start = localtime(ev['start']).strftime('%Y-%m-%d')
+                            ev_end   = localtime(ev['end']).strftime('%Y-%m-%d')
+                        else:
+                            ev_start = localtime(ev['start']).isoformat()
+                            ev_end   = localtime(ev['end']).isoformat()
+
                         events.append({
                             'id': f'rakumo_{ev["id"]}',
                             'title': ev['title'],
-                            'start': localtime(ev['start']).isoformat(),
-                            'end':   localtime(ev['end']).isoformat(),
+                            'start': ev_start,
+                            'end':   ev_end,
                             'room_id': room.id,
                             'room_name': room.name,
                             'color': '#718096',        # グレー
@@ -909,12 +942,23 @@ class ReservationMoveView(LoginRequiredMixin, View):
                 else start_at + timedelta(minutes=30)  # フォールバック：30分後
             )
 
-        # ── Rakumo 競合チェック（終日以外） ──────────────────────────
-        if not is_all_day:
-            try:
-                rakumo_svc = RakumoSyncService()
-                room_obj = Room.objects.get(pk=room_id)
-                if not rakumo_svc.no_op and room_obj.google_calendar_id:
+        # ── Rakumo 競合チェック ──────────────────────────────────
+        try:
+            rakumo_svc = RakumoSyncService()
+            room_obj = Room.objects.get(pk=room_id)
+            if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                if is_all_day:
+                    target_date = localtime(start_at).date()
+                    conflicts = rakumo_svc.check_conflict_with_rakumo_allday(
+                        room_obj.google_calendar_id, target_date,
+                        exclude_rakumo_event_id=reservation.rakumo_event_id or '',
+                    )
+                    if conflicts:
+                        return JsonResponse(
+                            {'error': f'本社にその日の予約があります。日程を変更してください。'},
+                            status=400,
+                        )
+                else:
                     conflicts = rakumo_svc.check_conflict_with_rakumo(
                         room_obj.google_calendar_id,
                         start_at,
@@ -922,13 +966,12 @@ class ReservationMoveView(LoginRequiredMixin, View):
                         exclude_rakumo_event_id=reservation.rakumo_event_id or '',
                     )
                     if conflicts:
-                        titles = '、'.join(ev['title'] for ev in conflicts[:3])
                         return JsonResponse(
-                            {'error': f'Rakumo（本社）に同じ時間帯の予約があります：{titles}。時間帯を変更してください。'},
+                            {'error': f'本社に同じ時間帯の予約があります。時間帯を変更してください。'},
                             status=400,
                         )
-            except Exception as e:
-                logger.warning(f'ReservationMoveView: Rakumo競合チェック失敗: {e}')
+        except Exception as e:
+            logger.warning(f'ReservationMoveView: Rakumo競合チェック失敗: {e}')
 
         with transaction.atomic():
             # 会議室行をロックして同時リクエストの割り込みを防ぐ

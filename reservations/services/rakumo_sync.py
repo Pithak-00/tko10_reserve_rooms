@@ -89,12 +89,16 @@ class RakumoSyncService:
         from django.utils.timezone import localtime
 
         if reservation.is_all_day:
-            date_str = localtime(reservation.start_at).strftime('%Y-%m-%d')
+            # Google Calendar の終日イベントは end.date が exclusive（翌日）である必要がある
+            from datetime import timedelta
+            start_local = localtime(reservation.start_at)
+            start_date  = start_local.strftime('%Y-%m-%d')
+            end_date    = (start_local.date() + timedelta(days=1)).strftime('%Y-%m-%d')
             body = {
                 'summary':     reservation.title,
                 'description': reservation.notes or '',
-                'start': {'date': date_str},
-                'end':   {'date': date_str},
+                'start': {'date': start_date},
+                'end':   {'date': end_date},
             }
         else:
             body = {
@@ -407,6 +411,36 @@ class RakumoSyncService:
                 conflicts.append(ev)
 
         return conflicts
+
+    def check_conflict_with_rakumo_allday(
+        self,
+        calendar_id: str,
+        target_date,                      # datetime.date（JST）
+        exclude_rakumo_event_id: str = '',
+    ) -> list:
+        """
+        終日予約の競合チェック。指定日に Rakumo のイベント（終日・時刻付き問わず）が
+        存在するか確認する。
+
+        通常の check_conflict_with_rakumo では DB の start_at が UTC 00:30 で保存される
+        ため終日 Rakumo イベント（UTC 00:00 開始）を正しく検出できない。
+        このメソッドは JST の日単位（00:00〜翌00:00）でフルに取得することで解決する。
+        """
+        if self.no_op or not calendar_id:
+            return []
+
+        from zoneinfo import ZoneInfo
+        from datetime import time as dt_time
+        jst = ZoneInfo('Asia/Tokyo')
+
+        day_start = datetime.combine(target_date,                    dt_time(0, 0)).replace(tzinfo=jst)
+        day_end   = datetime.combine(target_date + timedelta(days=1), dt_time(0, 0)).replace(tzinfo=jst)
+
+        events = self.fetch_rakumo_events(calendar_id, day_start, day_end)
+        return [
+            ev for ev in events
+            if not (exclude_rakumo_event_id and ev['id'] == exclude_rakumo_event_id)
+        ]
 
     def get_events_for_display(
         self,
