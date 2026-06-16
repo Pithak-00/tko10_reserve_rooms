@@ -210,13 +210,28 @@ function handleEventDrop(info) {
   const isAllDay     = res.allDay;
   const isAlldayDisp = !!res.extendedProps.display_as_allday;
 
-  // display_as_allday な終日予約はドロップ先の「日付」だけ使い、終日予約として保存する
-  const treatAsAllday = isAllDay || isAlldayDisp;
+  // display_as_allday な終日予約の判定：
+  //   同日にドロップ → 禁止（元に戻す）
+  //   別日にドロップ → 終日予約として新しい日付に移動
+  let treatAsAllday = isAllDay;
+  if (isAlldayDisp) {
+    const origD   = info.oldEvent.start;
+    const newD    = res.start;
+    const sameDay = origD.getFullYear() === newD.getFullYear() &&
+                    origD.getMonth()    === newD.getMonth()    &&
+                    origD.getDate()     === newD.getDate();
+    if (sameDay) {
+      info.revert();
+      return;
+    }
+    treatAsAllday = true;
+  }
 
   // 確認メッセージ
+  const endTime = res.end || new Date(res.start.getTime() + 30 * 60 * 1000);
   const msg = treatAsAllday
     ? `${formatDate(res.start)} 終日\nに変更しますか？`
-    : `${formatDate(res.start)} ${formatTime(res.start)}〜${formatTime(res.end)}\nに変更しますか？`;
+    : `${formatDate(res.start)} ${formatTime(res.start)}〜${formatTime(endTime)}\nに変更しますか？`;
 
   // API へ送るペイロード
   const payload = {
@@ -234,10 +249,7 @@ function handleEventDrop(info) {
     }
   } else {
     payload.start_at = res.start.toISOString();
-    // 終日→通常への切り替え時に res.end が null になる場合があるため、
-    // その場合は開始時刻の30分後をデフォルトとする
-    const endDate = res.end || new Date(res.start.getTime() + 30 * 60 * 1000);
-    payload.end_at = endDate.toISOString();
+    payload.end_at   = endTime.toISOString();
   }
 
   showConfirm(
