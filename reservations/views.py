@@ -228,21 +228,27 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
                 can_edit    = (res.user_id == self.request.user.pk or
                                self.request.user.is_staff)
 
-                # 終日予約は時刻計算をスキップして固定値で登録
+                # Rakumoから同期した予約はグレー「本社使用」として表示
+                is_rakumo_db = res.is_rakumo_source
+                rakumo_color = '#718096'
+
+                # 終日予約はメイングリッドで全幅表示（終日列は廃止）
                 if res.is_all_day:
                     res_list.append({
-                        'id':          res.pk,
-                        'title':       res.title,
-                        'reserved_by': res.reserved_by,
-                        'start_min':   0,
-                        'dur_min':     total_minutes,
-                        'left_px':     0,
-                        'width_px':    0,
-                        'color':       res.color or '#3182CE',
-                        'start_str':   '終日',
-                        'end_str':     '',
-                        'is_all_day':  True,
-                        'can_edit':    can_edit,
+                        'id':               res.pk,
+                        'title':            res.title,
+                        'reserved_by':      res.reserved_by,
+                        'start_min':        0,
+                        'dur_min':          total_minutes,
+                        'left_px':          0,
+                        'width_px':         0,
+                        'color':            rakumo_color if is_rakumo_db else (res.color or '#3182CE'),
+                        'start_str':        '終日',
+                        'end_str':          '',
+                        'is_all_day':       False,   # メイングリッドに描画
+                        'can_edit':         False,   # 終日はDnD/リサイズ無効
+                        'display_as_allday': True,
+                        'is_rakumo':        is_rakumo_db,
                     })
                     continue
 
@@ -267,11 +273,12 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
                     'dur_min':     dur_min,
                     'left_px':     left_px,
                     'width_px':    width_px,
-                    'color':       res.color or '#3182CE',
+                    'color':       rakumo_color if is_rakumo_db else (res.color or '#3182CE'),
                     'start_str':   local_start.strftime('%H:%M'),
                     'end_str':     local_end.strftime('%H:%M'),
                     'is_all_day':  False,
-                    'can_edit':    can_edit,
+                    'can_edit':    False if is_rakumo_db else can_edit,
+                    'is_rakumo':   is_rakumo_db,
                 })
             room_data.append({'room': room, 'reservations': res_list})
 
@@ -300,19 +307,20 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
                             continue
                         if ev['is_all_day']:
                             rd['reservations'].append({
-                                'id':          f'rakumo_{ev["id"]}',
-                                'title':       ev['title'],
-                                'reserved_by': ev.get('organizer', ''),
-                                'start_min':   0,
-                                'dur_min':     total_minutes,
-                                'left_px':     0,
-                                'width_px':    0,
-                                'color':       '#718096',
-                                'start_str':   '終日',
-                                'end_str':     '',
-                                'is_all_day':  True,
-                                'can_edit':    False,
-                                'is_rakumo':   True,
+                                'id':               f'rakumo_{ev["id"]}',
+                                'title':            ev['title'],
+                                'reserved_by':      ev.get('organizer', ''),
+                                'start_min':        0,
+                                'dur_min':          total_minutes,
+                                'left_px':          0,
+                                'width_px':         0,
+                                'color':            '#718096',
+                                'start_str':        '終日',
+                                'end_str':          '',
+                                'is_all_day':       False,  # メイングリッドに描画
+                                'can_edit':         False,
+                                'is_rakumo':        True,
+                                'display_as_allday': True,
                             })
                         else:
                             s_local = localtime(ev['start'])
@@ -803,23 +811,34 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
                 return JsonResponse([], safe=False)
             qs = qs.filter(user_id__in=user_ids)
 
+        tz_local = timezone.get_current_timezone()
         events = []
         for res in qs:
-            color = res.color or '#3182CE'
+            color    = res.color or '#3182CE'
+            can_edit = res.user == request.user or request.user.is_staff
+            if res.is_all_day:
+                # 終日予約はメイングリッドで 08:00〜22:00 として表示
+                day      = localtime(res.start_at).date()
+                ev_start = timezone.make_aware(datetime.combine(day, dt_time(8,  0)), tz_local).isoformat()
+                ev_end   = timezone.make_aware(datetime.combine(day, dt_time(22, 0)), tz_local).isoformat()
+            else:
+                ev_start = localtime(res.start_at).isoformat()
+                ev_end   = localtime(res.end_at).isoformat()
             events.append({
-                'id': res.id,
-                'title': res.title,
-                'start': localtime(res.start_at).isoformat(),
-                'end':   localtime(res.end_at).isoformat(),
-                'room_id': res.room_id,
-                'room_name': res.room.name,
-                'color': color,
-                'reserved_by': res.reserved_by,
-                'is_owner': res.user == request.user,
-                'can_edit': res.user == request.user or request.user.is_staff,
-                'editable': res.user == request.user or request.user.is_staff,
-                'allDay': res.is_all_day,
-                'is_rakumo': False,
+                'id':               res.id,
+                'title':            res.title,
+                'start':            ev_start,
+                'end':              ev_end,
+                'room_id':          res.room_id,
+                'room_name':        res.room.name,
+                'color':            color,
+                'reserved_by':      res.reserved_by,
+                'is_owner':         res.user == request.user,
+                'can_edit':         can_edit,
+                'editable':         can_edit and not res.is_all_day,  # 終日はDnD無効
+                'allDay':           False,
+                'is_rakumo':        False,
+                'display_as_allday': res.is_all_day,
             })
 
         # ── Rakumoイベントをリアルタイム取得して追加（グレー表示）──
@@ -872,30 +891,31 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
                         if ev['id'] in existing_rakumo_ids:
                             continue  # 既にDBに取り込み済みのものはスキップ
 
-                        # 終日イベントは YYYY-MM-DD 形式で渡す
-                        # （datetime 文字列だと FullCalendar が時刻付きイベントとして扱うため）
+                        # 終日イベントはメイングリッドで 08:00〜22:00 として表示
                         if ev['is_all_day']:
-                            ev_start = localtime(ev['start']).strftime('%Y-%m-%d')
-                            ev_end   = localtime(ev['end']).strftime('%Y-%m-%d')
+                            day      = localtime(ev['start']).date()
+                            ev_start = timezone.make_aware(datetime.combine(day, dt_time(8,  0)), tz_local).isoformat()
+                            ev_end   = timezone.make_aware(datetime.combine(day, dt_time(22, 0)), tz_local).isoformat()
                         else:
                             ev_start = localtime(ev['start']).isoformat()
                             ev_end   = localtime(ev['end']).isoformat()
 
                         events.append({
-                            'id': f'rakumo_{ev["id"]}',
-                            'title': ev['title'],
-                            'start': ev_start,
-                            'end':   ev_end,
-                            'room_id': room.id,
-                            'room_name': room.name,
-                            'color': '#718096',        # グレー
-                            'textColor': '#FFFFFF',
-                            'reserved_by': ev.get('organizer', ''),
-                            'is_owner': False,
-                            'can_edit': False,
-                            'editable': False,
-                            'allDay': ev['is_all_day'],
-                            'is_rakumo': True,
+                            'id':                f'rakumo_{ev["id"]}',
+                            'title':             ev['title'],
+                            'start':             ev_start,
+                            'end':               ev_end,
+                            'room_id':           room.id,
+                            'room_name':         room.name,
+                            'color':             '#718096',
+                            'textColor':         '#FFFFFF',
+                            'reserved_by':       ev.get('organizer', ''),
+                            'is_owner':          False,
+                            'can_edit':          False,
+                            'editable':          False,
+                            'allDay':            False,
+                            'is_rakumo':         True,
+                            'display_as_allday': ev['is_all_day'],
                         })
         except Exception as e:
             logger.warning(f'CalendarEventsAPI: Rakumoイベント取得失敗: {e}')

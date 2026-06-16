@@ -303,6 +303,9 @@ class RakumoSyncService:
                         start_dt = start_dt.replace(tzinfo=dt_timezone.utc)
                     if end_dt.tzinfo is None:
                         end_dt = end_dt.replace(tzinfo=dt_timezone.utc)
+                    # Rakumoが dateTime 形式で終日予約を保存するケース（00:00〜翌00:00）を検出
+                    if (end_dt - start_dt).total_seconds() >= 23 * 3600:
+                        is_all_day = True
 
                 organizer = (
                     item.get('organizer', {}).get('displayName') or

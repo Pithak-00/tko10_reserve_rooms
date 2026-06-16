@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', function () {
     scrollTime: '08:00:00',
     nowIndicator: true,
     dayMaxEvents: 2,
+    allDaySlot: false,     // 終日行を非表示（終日予約はメイングリッドに 08:00〜22:00 で表示）
     editable: true,
     selectable: true,
     headerToolbar: false,  // カスタムツールバー使用
@@ -81,7 +82,8 @@ document.addEventListener('DOMContentLoaded', function () {
       const title = arg.event.title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const room  = (ep.room_name   || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const reserver = (ep.reserved_by || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const isRakumo = !!ep.is_rakumo;
+      const isRakumo      = !!ep.is_rakumo;
+      const isAlldayDisp  = !!ep.display_as_allday;
       const rakumoBadge = '<span style="display:inline-block;background:#718096;color:#fff;font-size:13px;' +
         'font-weight:700;padding:2px 7px;border-radius:3px;margin-right:3px;' +
         'vertical-align:middle;line-height:1.4;">本社使用</span>';
@@ -89,7 +91,8 @@ document.addEventListener('DOMContentLoaded', function () {
       if (arg.view.type === 'dayGridMonth') {
         // 月ビュー：ドット + 時刻ラベル + (Rakumoならバッジのみ / 通常なら件名+予約者)
         const color = arg.event.backgroundColor || '#3182CE';
-        const label = arg.event.allDay ? '終日' : arg.timeText;
+        // 終日表示イベントは時刻の代わりに「終日」ラベルを出す
+        const label = isAlldayDisp ? '終日' : arg.timeText;
         if (isRakumo) {
           const roomSub = room ? '<span class="mev-sub">' + room + '</span>' : '';
           return {
@@ -190,7 +193,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // 週・日ビュー：背景色に応じて白 or 黒を選択
         info.el.style.color = getTextColor(info.event.backgroundColor || '#3182CE');
       }
-      if (!info.event.extendedProps.can_edit) {
+      if (!info.event.extendedProps.can_edit || info.event.extendedProps.display_as_allday) {
         info.el.setAttribute('draggable', 'false');
         info.el.style.cursor = 'default';
       }
@@ -311,8 +314,9 @@ function handleEventClick(info) {
   const isRakumoEv = !!ep.is_rakumo;
   po.querySelector('.popover-title').textContent = isRakumoEv ? '本社使用' : ev.title;
   po.querySelector('.popover-title').style.backgroundColor = ev.backgroundColor;
-  po.querySelector('[data-field="datetime"]').textContent =
-    `${formatDate(ev.start)} ${formatTime(ev.start)}〜${formatTime(ev.end)}`;
+  po.querySelector('[data-field="datetime"]').textContent = ep.display_as_allday
+    ? `${formatDate(ev.start)} 終日`
+    : `${formatDate(ev.start)} ${formatTime(ev.start)}〜${formatTime(ev.end)}`;
   po.querySelector('[data-field="room"]').textContent = ep.room_name;
   // Rakumo予約は予約者を非表示
   const reserverRow = po.querySelector('[data-field="reserver"]')?.closest('p');

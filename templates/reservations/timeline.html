@@ -118,38 +118,6 @@
           </div>
         </div>
 
-        <!-- 終日列（固定） -->
-        <div class="tl-allday-col" id="alldayCol">
-          <div class="tl-allday-col-header">終日</div>
-          <div class="tl-allday-col-rows" id="alldayColRows">
-            {% for rd in room_data %}
-            <div class="tl-allday-col-cell" data-room-id="{{ rd.room.id }}">
-              {% for ev in rd.reservations %}{% if ev.is_all_day %}
-              <div class="tl-event tl-event-allday"
-                   data-pk="{{ ev.id }}"
-                   data-start-min="0"
-                   data-dur-min="{{ total_minutes }}"
-                   data-title="{{ ev.title }}"
-                   data-start-str="終日"
-                   data-end-str=""
-                   data-reserved-by="{{ ev.reserved_by }}"
-                   data-room-name="{{ rd.room.name }}"
-                   data-can-edit="{{ ev.can_edit|yesno:'1,0' }}"
-                   data-is-rakumo="{{ ev.is_rakumo|default:False|yesno:'1,0' }}"
-                   style="background:{{ ev.color }}; position:static; width:100%; height:22px; font-size:0.68rem; border-radius:3px; margin-bottom:2px;">
-                {% if ev.is_rakumo %}
-                <span class="tl-event-text" style="font-weight:700;font-size:13px;">本社使用</span>
-                {% else %}
-                <span class="tl-event-text">{{ ev.title }}</span>
-                {% endif %}
-              </div>
-              {% endif %}{% endfor %}
-            </div>
-            {% empty %}
-            <div class="tl-allday-col-cell"></div>
-            {% endfor %}
-          </div>
-        </div>
 
         <!-- 右スクロール：タイムライン本体 -->
         <div class="tl-scroll-area" id="scrollArea"
@@ -176,8 +144,7 @@
               {% endfor %}
 
               {% for ev in rd.reservations %}
-              {% if not ev.is_all_day %}
-              <div class="tl-event{% if not ev.can_edit %} tl-event-readonly{% endif %}"
+              <div class="tl-event{% if not ev.can_edit %} tl-event-readonly{% endif %}{% if ev.display_as_allday %} tl-event-allday-inline{% endif %}"
                  data-pk="{{ ev.id }}"
                  data-start-min="{{ ev.start_min }}"
                  data-dur-min="{{ ev.dur_min }}"
@@ -188,16 +155,16 @@
                  data-room-name="{{ rd.room.name }}"
                  data-can-edit="{{ ev.can_edit|yesno:'1,0' }}"
                  data-is-rakumo="{{ ev.is_rakumo|default:False|yesno:'1,0' }}"
+                 data-is-allday-display="{{ ev.display_as_allday|default:False|yesno:'1,0' }}"
                  style="background:{{ ev.color }};"
-                 title="{{ ev.start_str }}〜{{ ev.end_str }}{% if not ev.is_rakumo %} {{ ev.title }}{% endif %}">
+                 title="{% if ev.display_as_allday %}終日{% else %}{{ ev.start_str }}〜{{ ev.end_str }}{% endif %}{% if not ev.is_rakumo %} {{ ev.title }}{% endif %}">
                 {% if ev.is_rakumo %}
                 <span class="tl-event-text" style="font-weight:700;font-size:13px;">本社使用</span>
                 {% else %}
                 <span class="tl-event-text">{{ ev.title }}</span>
-                {% if ev.can_edit %}<span class="tl-resize-handle"></span>{% endif %}
+                {% if ev.can_edit and not ev.display_as_allday %}<span class="tl-resize-handle"></span>{% endif %}
                 {% endif %}
               </div>
-              {% endif %}
               {% endfor %}
             </div>
             {% empty %}
@@ -347,9 +314,10 @@
     const LONG_PRESS_MS = 500; // 長押し判定時間(ms)
 
     scrollArea.addEventListener('pointerdown', function (e) {
-      const evEl = e.target.closest('.tl-event:not(.tl-event-allday)');
+      const evEl = e.target.closest('.tl-event');
       if (!evEl) return;
       if (evEl.dataset.canEdit !== '1') return;
+      if (evEl.dataset.isAlldayDisplay === '1') return;  // 終日表示はDnD無効
 
       const isResize  = !!e.target.closest('.tl-resize-handle');
       const isTouch   = e.pointerType === 'touch';
@@ -369,12 +337,14 @@
         let hasMoved = false;
         evEl.classList.add(isResize ? 'tl-event-resizing' : 'tl-event-dragging');
 
-        const alldayColEl = document.getElementById('alldayCol');
+        const alldayColEl = document.getElementById('alldayCol'); // null（終日列廃止）
         let alldayDropCell = null;
 
         function clearAlldayHighlight() {
-          alldayColEl.querySelectorAll('.tl-allday-col-cell').forEach(c =>
-            c.classList.remove('tl-allday-drop-target'));
+          if (alldayColEl) {
+            alldayColEl.querySelectorAll('.tl-allday-col-cell').forEach(c =>
+              c.classList.remove('tl-allday-drop-target'));
+          }
           alldayDropCell = null;
         }
 
@@ -652,8 +622,9 @@
 
       const s = evEl.dataset.startStr || '';
       const f = evEl.dataset.endStr   || '';
+      const isAlldayDisp = evEl.dataset.isAlldayDisplay === '1';
       document.getElementById('tlPopTime').textContent =
-        s === '終日' ? '終日' : `${s}〜${f}`;
+        isAlldayDisp ? '終日' : `${s}〜${f}`;
       document.getElementById('tlPopRoom').textContent = evEl.dataset.roomName || '';
 
       // Rakumo予約は予約者を非表示
@@ -717,15 +688,6 @@
       openTlPopover(evEl, e.clientX, e.clientY);
     });
 
-    // 終日列の予約ブロッククリック → ポップアップ
-    document.getElementById('alldayCol').addEventListener('click', function (e) {
-      const evEl = e.target.closest('.tl-event');
-      if (!evEl) return;
-      e.preventDefault();
-      e.stopPropagation();
-      openTlPopover(evEl, e.clientX, e.clientY);
-    });
-
     // 外クリック・Escape で閉じる
     document.addEventListener('click', () => { popover.hidden = true; });
     document.addEventListener('keydown', (e) => {
@@ -733,10 +695,10 @@
     });
 
     /* ══════════════════════════════════════════════════════
-       終日列：セル選択ドラッグ → 終日予約作成
-               イベントドラッグ  → タイムグリッドへドロップで通常予約に変換
+       終日列は廃止。終日予約はメイングリッドで全幅表示するため
+       ここの処理は不要（ブロックを削除）
        ══════════════════════════════════════════════════════ */
-    (function () {
+    if (false) (function () {
       const alldayColEl = document.getElementById('alldayCol');
       const DEFAULT_DUR = 60; // ドロップ時のデフォルト時間幅（分）
 
@@ -925,11 +887,9 @@
     })();
 
     /* ── 縦スクロール同期 ─────────────────────────────── */
-    const alldayColRows = document.getElementById('alldayColRows');
     if (scrollArea && roomRows) {
       scrollArea.addEventListener('scroll', () => {
-        roomRows.scrollTop     = scrollArea.scrollTop;
-        if (alldayColRows) alldayColRows.scrollTop = scrollArea.scrollTop;
+        roomRows.scrollTop = scrollArea.scrollTop;
       });
     }
   })();
