@@ -763,11 +763,14 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
                 else:
                     end_aware = end
 
-                # ローカルDBに取り込み済みのRakumoイベントIDセット（重複表示防止）
+                # このシステムで把握済みのRakumoイベントIDセット（グレー二重表示防止）
+                # ・is_rakumo_source=True  … Rakumoから取り込んだ予約
+                # ・rakumo_event_id__gt='' … このシステムからRakumoへ書き込んだ予約
+                # どちらもRakumo上に存在するためグレー表示をスキップする
                 existing_rakumo_ids = set(
                     Reservation.objects.filter(
                         is_cancelled=False,
-                        is_rakumo_source=True,
+                        rakumo_event_id__gt='',
                         start_at__lt=end_aware,
                         end_at__gt=start_aware,
                     ).values_list('rakumo_event_id', flat=True)
