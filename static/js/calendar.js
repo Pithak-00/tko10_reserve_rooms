@@ -81,11 +81,23 @@ document.addEventListener('DOMContentLoaded', function () {
       const title = arg.event.title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const room  = (ep.room_name   || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const reserver = (ep.reserved_by || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const isRakumo = !!ep.is_rakumo;
+      const rakumoBadge = '<span style="display:inline-block;background:#718096;color:#fff;font-size:13px;' +
+        'font-weight:700;padding:2px 7px;border-radius:3px;margin-right:3px;' +
+        'vertical-align:middle;line-height:1.4;">本社使用</span>';
 
       if (arg.view.type === 'dayGridMonth') {
-        // 月ビュー：ドット + 時刻ラベル + 件名 + 予約者
+        // 月ビュー：ドット + 時刻ラベル + (Rakumoならバッジのみ / 通常なら件名+予約者)
         const color = arg.event.backgroundColor || '#3182CE';
         const label = arg.event.allDay ? '終日' : arg.timeText;
+        if (isRakumo) {
+          const roomSub = room ? '<span class="mev-sub">' + room + '</span>' : '';
+          return {
+            html: '<span class="mev-dot" style="background-color:' + color + '"></span>' +
+                  '<span class="mev-time">' + label + '</span>' +
+                  rakumoBadge + roomSub,
+          };
+        }
         const subParts = [room, reserver].filter(Boolean);
         const sub = subParts.length
           ? '<span class="mev-sub">' + subParts.join(' ／ ') + '</span>'
@@ -98,7 +110,30 @@ document.addEventListener('DOMContentLoaded', function () {
         };
       }
 
-      // 週・日ビュー：件名の下に「会議室 ／ 予約者」を小さく表示
+      // 週・日ビュー
+      if (isRakumo) {
+        // Rakumo：バッジ + 会議室名（件名・予約者非表示）
+        const roomSubHtml = room ? '<div class="fc-event-sub">' + room + '</div>' : '';
+        if (arg.timeText) {
+          return {
+            html: '<div class="fc-event-main-frame">' +
+                  '<div class="fc-event-title-container">' +
+                  '<div class="fc-event-title fc-sticky">' + rakumoBadge + '</div>' +
+                  roomSubHtml +
+                  '<div class="fc-event-time">' + arg.timeText + '</div>' +
+                  '</div></div>',
+          };
+        }
+        return {
+          html: '<div class="fc-event-main-frame">' +
+                '<div class="fc-event-title-container">' +
+                '<div class="fc-event-title fc-sticky">' + rakumoBadge + '</div>' +
+                roomSubHtml +
+                '</div></div>',
+        };
+      }
+
+      // 週・日ビュー（通常予約）：件名の下に「会議室 ／ 予約者」を小さく表示
       const subParts = [room, reserver].filter(Boolean);
       const subHtml = subParts.length
         ? '<div class="fc-event-sub">' + subParts.join(' ／ ') + '</div>'
@@ -107,7 +142,6 @@ document.addEventListener('DOMContentLoaded', function () {
       if (arg.timeText) {
         return {
           html: '<div class="fc-event-main-frame">' +
-                
                 '<div class="fc-event-title-container">' +
                 '<div class="fc-event-title fc-sticky">' + title + '</div>' +
                 subHtml +
@@ -274,12 +308,16 @@ function handleEventClick(info) {
   const po = document.querySelector('.reservation-popover');
 
   // 内容を更新
-  po.querySelector('.popover-title').textContent = ev.title;
+  const isRakumoEv = !!ep.is_rakumo;
+  po.querySelector('.popover-title').textContent = isRakumoEv ? '本社使用' : ev.title;
   po.querySelector('.popover-title').style.backgroundColor = ev.backgroundColor;
   po.querySelector('[data-field="datetime"]').textContent =
     `${formatDate(ev.start)} ${formatTime(ev.start)}〜${formatTime(ev.end)}`;
   po.querySelector('[data-field="room"]').textContent = ep.room_name;
-  po.querySelector('[data-field="reserver"]').textContent = ep.reserved_by;
+  // Rakumo予約は予約者を非表示
+  const reserverRow = po.querySelector('[data-field="reserver"]')?.closest('p');
+  if (reserverRow) reserverRow.style.display = isRakumoEv ? 'none' : '';
+  po.querySelector('[data-field="reserver"]').textContent = isRakumoEv ? '' : ep.reserved_by;
 
   // 権限に応じてボタン表示
   const editBtn    = po.querySelector('.btn-edit');
@@ -289,6 +327,8 @@ function handleEventClick(info) {
 
   editBtn.style.display    = ep.can_edit ? '' : 'none';  // 編集：自分の予約 or 管理者
   cancelForm.style.display = ep.can_edit ? '' : 'none';  // キャンセル：自分の予約 or 管理者
+  // Rakumo予約は詳細ページなし
+  detailBtn.style.display  = isRakumoEv ? 'none' : '';
   editBtn.href     = `/reservations/${ev.id}/edit/`;
   detailBtn.href   = `/reservations/${ev.id}/`;
 

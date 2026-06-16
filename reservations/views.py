@@ -275,6 +275,71 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
                 })
             room_data.append({'room': room, 'reservations': res_list})
 
+        # ── Rakumo イベントをタイムラインに追加（グレー表示）──
+        try:
+            rakumo_svc = RakumoSyncService()
+            if not rakumo_svc.no_op:
+                # DB で把握済みの Rakumo イベント ID（二重表示防止）
+                existing_rakumo_ids = set(
+                    Reservation.objects.filter(
+                        is_cancelled=False,
+                        rakumo_event_id__gt='',
+                        start_at__lt=day_end,
+                        end_at__gt=day_start,
+                    ).values_list('rakumo_event_id', flat=True)
+                )
+                for rd in room_data:
+                    room_obj = rd['room']
+                    if not room_obj.google_calendar_id:
+                        continue
+                    rakumo_events = rakumo_svc.get_events_for_display(
+                        room_obj.google_calendar_id, day_start, day_end
+                    )
+                    for ev in rakumo_events:
+                        if ev['id'] in existing_rakumo_ids:
+                            continue
+                        if ev['is_all_day']:
+                            rd['reservations'].append({
+                                'id':          f'rakumo_{ev["id"]}',
+                                'title':       ev['title'],
+                                'reserved_by': ev.get('organizer', ''),
+                                'start_min':   0,
+                                'dur_min':     total_minutes,
+                                'left_px':     0,
+                                'width_px':    0,
+                                'color':       '#718096',
+                                'start_str':   '終日',
+                                'end_str':     '',
+                                'is_all_day':  True,
+                                'can_edit':    False,
+                                'is_rakumo':   True,
+                            })
+                        else:
+                            s_local = localtime(ev['start'])
+                            e_local = localtime(ev['end'])
+                            s_min = max((s_local.hour - hour_start) * 60 + s_local.minute, 0)
+                            e_min = min((e_local.hour - hour_start) * 60 + e_local.minute, total_minutes)
+                            if e_min <= s_min:
+                                continue
+                            dur = e_min - s_min
+                            rd['reservations'].append({
+                                'id':          f'rakumo_{ev["id"]}',
+                                'title':       ev['title'],
+                                'reserved_by': ev.get('organizer', ''),
+                                'start_min':   s_min,
+                                'dur_min':     dur,
+                                'left_px':     int(s_min * hour_width / 60),
+                                'width_px':    max(int(dur * hour_width / 60), 4),
+                                'color':       '#718096',
+                                'start_str':   s_local.strftime('%H:%M'),
+                                'end_str':     e_local.strftime('%H:%M'),
+                                'is_all_day':  False,
+                                'can_edit':    False,
+                                'is_rakumo':   True,
+                            })
+        except Exception as e:
+            logger.warning(f'ReservationTimelineView: Rakumoイベント取得失敗: {e}')
+
         # ミニカレンダー用データ
         year  = target.year
         month = target.month
@@ -449,7 +514,7 @@ class ReservationCreateView(CreateView):
                         titles = '、'.join(ev['title'] for ev in conflicts[:3])
                         form.add_error(
                             None,
-                            f'Rakumo（本社）に同じ時間帯の予約があります：{titles}。'
+                            f'本社に同じ時間帯の予約があります：{titles}。'
                             '時間帯を変更してください。'
                         )
                         return self.form_invalid(form)
@@ -545,7 +610,7 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
                         titles = '、'.join(ev['title'] for ev in conflicts[:3])
                         form.add_error(
                             None,
-                            f'Rakumo（本社）に同じ時間帯の予約があります：{titles}。'
+                            f'本社に同じ時間帯の予約があります：{titles}。'
                             '時間帯を変更してください。'
                         )
                         return self.form_invalid(form)
@@ -785,7 +850,7 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
                             continue  # 既にDBに取り込み済みのものはスキップ
                         events.append({
                             'id': f'rakumo_{ev["id"]}',
-                            'title': f'[Rakumo] {ev["title"]}',
+                            'title': ev['title'],
                             'start': localtime(ev['start']).isoformat(),
                             'end':   localtime(ev['end']).isoformat(),
                             'room_id': room.id,
