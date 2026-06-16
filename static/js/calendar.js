@@ -193,7 +193,8 @@ document.addEventListener('DOMContentLoaded', function () {
         // 週・日ビュー：背景色に応じて白 or 黒を選択
         info.el.style.color = getTextColor(info.event.backgroundColor || '#3182CE');
       }
-      if (!info.event.extendedProps.can_edit || info.event.extendedProps.display_as_allday) {
+      // can_edit が false の場合のみ DnD を無効化（display_as_allday は can_edit で制御）
+      if (!info.event.extendedProps.can_edit) {
         info.el.setAttribute('draggable', 'false');
         info.el.style.cursor = 'default';
       }
@@ -205,22 +206,32 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // DnD コールバック（eventDrop / eventResize 共通）
 function handleEventDrop(info) {
-  const res     = info.event;
-  const isAllDay = res.allDay;
+  const res          = info.event;
+  const isAllDay     = res.allDay;
+  const isAlldayDisp = !!res.extendedProps.display_as_allday;
+
+  // display_as_allday な終日予約はドロップ先の「日付」だけ使い、終日予約として保存する
+  const treatAsAllday = isAllDay || isAlldayDisp;
 
   // 確認メッセージ
-  const msg = isAllDay
+  const msg = treatAsAllday
     ? `${formatDate(res.start)} 終日\nに変更しますか？`
     : `${formatDate(res.start)} ${formatTime(res.start)}〜${formatTime(res.end)}\nに変更しますか？`;
 
   // API へ送るペイロード
   const payload = {
     room_id:    res.extendedProps.room_id,
-    is_all_day: isAllDay,
+    is_all_day: treatAsAllday,
   };
-  if (isAllDay) {
+  if (treatAsAllday) {
     // 終日の場合は日付文字列だけ送る（toISOString() はタイムゾーンで日付がずれる場合があるため）
-    payload.date = res.startStr.slice(0, 10);  // 'YYYY-MM-DD'
+    if (isAlldayDisp) {
+      // display_as_allday イベントは 08:00 起点のためローカル日付で抽出する
+      const d = res.start;
+      payload.date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    } else {
+      payload.date = res.startStr.slice(0, 10);  // 'YYYY-MM-DD'
+    }
   } else {
     payload.start_at = res.start.toISOString();
     // 終日→通常への切り替え時に res.end が null になる場合があるため、

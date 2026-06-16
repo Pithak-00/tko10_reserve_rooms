@@ -246,7 +246,7 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
                         'start_str':        '終日',
                         'end_str':          '',
                         'is_all_day':       False,   # メイングリッドに描画
-                        'can_edit':         False,   # 終日はDnD/リサイズ無効
+                        'can_edit':         can_edit and not is_rakumo_db,  # Rakumoは常に編集不可
                         'display_as_allday': True,
                         'is_rakumo':        is_rakumo_db,
                     })
@@ -835,7 +835,7 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
                 'reserved_by':      res.reserved_by,
                 'is_owner':         res.user == request.user,
                 'can_edit':         can_edit,
-                'editable':         can_edit and not res.is_all_day,  # 終日はDnD無効
+                'editable':         can_edit,  # Rakumoはcan_edit=Falseなので自動でDnD無効
                 'allDay':           False,
                 'is_rakumo':        False,
                 'display_as_allday': res.is_all_day,
