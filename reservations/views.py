@@ -909,6 +909,27 @@ class ReservationMoveView(LoginRequiredMixin, View):
                 else start_at + timedelta(minutes=30)  # フォールバック：30分後
             )
 
+        # ── Rakumo 競合チェック（終日以外） ──────────────────────────
+        if not is_all_day:
+            try:
+                rakumo_svc = RakumoSyncService()
+                room_obj = Room.objects.get(pk=room_id)
+                if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                    conflicts = rakumo_svc.check_conflict_with_rakumo(
+                        room_obj.google_calendar_id,
+                        start_at,
+                        end_at,
+                        exclude_rakumo_event_id=reservation.rakumo_event_id or '',
+                    )
+                    if conflicts:
+                        titles = '、'.join(ev['title'] for ev in conflicts[:3])
+                        return JsonResponse(
+                            {'error': f'Rakumo（本社）に同じ時間帯の予約があります：{titles}。時間帯を変更してください。'},
+                            status=400,
+                        )
+            except Exception as e:
+                logger.warning(f'ReservationMoveView: Rakumo競合チェック失敗: {e}')
+
         with transaction.atomic():
             # 会議室行をロックして同時リクエストの割り込みを防ぐ
             Room.objects.select_for_update().get(pk=room_id)
