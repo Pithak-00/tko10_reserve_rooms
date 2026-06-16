@@ -490,12 +490,6 @@ class ReservationCreateView(CreateView):
             RakumoSyncService().create_event(reservation)
         except Exception as e:
             logger.warning(f'Rakumo sync on create failed: {e}')
-        # 重複チェック
-        try:
-            from .services.duplicate_check import detect_and_save
-            detect_and_save(reservation)
-        except Exception as e:
-            logger.warning(f'Duplicate check on create failed: {e}')
         return redirect(self.get_success_url())
 
     def get_success_url(self):
@@ -603,13 +597,6 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
             RakumoSyncService().update_event(self.object)
         except Exception as e:
             logger.warning(f'Rakumo sync on update failed: {e}')
-        # 重複チェック（変更後に再チェック・解消チェック）
-        try:
-            from .services.duplicate_check import detect_and_save, resolve_if_no_longer_overlapping
-            resolve_if_no_longer_overlapping(self.object)
-            detect_and_save(self.object)
-        except Exception as e:
-            logger.warning(f'Duplicate check on update failed: {e}')
         return redirect(self.get_success_url())
 
     def get_success_url(self):
@@ -650,13 +637,6 @@ def reservation_cancel(request, pk):
         RakumoSyncService().delete_event(reservation)
     except Exception as e:
         logger.warning(f'Rakumo sync on cancel failed: {e}')
-    # 重複解消チェック（キャンセルにより重複が解消される）
-    try:
-        from .services.duplicate_check import resolve_if_no_longer_overlapping
-        resolve_if_no_longer_overlapping(reservation)
-    except Exception as e:
-        logger.warning(f'Duplicate resolve on cancel failed: {e}')
-
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'calendar'
     return redirect(next_url)
 
