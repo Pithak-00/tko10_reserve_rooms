@@ -122,19 +122,7 @@
       <a href="/"><img src="{% static 'image/bold-logo.webp' %}" alt="logo"></a>
       <span>社内会議室予約システム：Rakumo連携設定</span>
     </div>
-    <div class="top-links">
-      <a href="{% url 'reservation_timeline' %}">会議室の一覧</a>
-      <span class="sep">｜</span>
-      <a href="{% url 'calendar' %}">カレンダー</a>
-      <span class="sep">｜</span>
-      <a href="{% url 'my_reservations' %}">自分の予約</a>
-      <span class="sep">｜</span>
-      <span class="header-username">{{ request.user.name }}さん</span>
-      <form method="post" action="{% url 'logout' %}" class="logout-form">
-        {% csrf_token %}
-        <button type="submit" class="logout-btn-tab">ログアウト</button>
-      </form>
-    </div>
+    {% include 'includes/header_nav_admin.html' %}
   </div>
 
   <div class="calendar-container">
@@ -236,6 +224,7 @@
     </div>
   </div>
 
+  <script src="{% static 'js/common.js' %}"></script>
   <script>
     const CSRF_TOKEN = '{{ csrf_token }}';
 
