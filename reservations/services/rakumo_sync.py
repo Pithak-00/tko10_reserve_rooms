@@ -353,12 +353,13 @@ class RakumoSyncService:
         ).order_by('start_at')
 
         local_events = [{
-            'id':         r.id,
-            'title':      r.title,
-            'start':      r.start_at,
-            'end':        r.end_at,
-            'organizer':  r.reserved_by,
-            'is_all_day': r.is_all_day,
+            'id':              r.id,
+            'title':           r.title,
+            'start':           r.start_at,
+            'end':             r.end_at,
+            'organizer':       r.reserved_by,
+            'is_all_day':      r.is_all_day,
+            'rakumo_event_id': r.rakumo_event_id,
         } for r in local_qs]
 
         def make_key(title, start_dt):
@@ -367,15 +368,38 @@ class RakumoSyncService:
             start_jst = start_dt.astimezone(jst) if hasattr(start_dt, 'astimezone') else start_dt
             return f"{title.strip().lower()}|{start_jst.strftime('%Y%m%d%H%M')}"
 
-        rakumo_keys = {make_key(e['title'], e['start']): e for e in rakumo_events}
-        local_keys  = {make_key(e['title'], e['start']): e for e in local_events}
+        # ── ① rakumo_event_id による照合（最優先）────────────────────────
+        # 予約を終日に変更すると start_at が変わるため title+時刻キーがズレる。
+        # Rakumo イベントIDが一致すれば時刻が変わっていても同一予約として扱う。
+        rakumo_by_id = {e['id']: e for e in rakumo_events if e.get('id')}
+        matched_rakumo_ids = set()
+        matched_local_rakumo_ids = set()
+        matched = []
+
+        for lev in local_events:
+            rid = lev.get('rakumo_event_id', '')
+            if rid and rid in rakumo_by_id:
+                matched.append(lev)   # ローカルイベントを使う（表示はこのシステムの最新状態）
+                matched_rakumo_ids.add(rid)
+                matched_local_rakumo_ids.add(rid)
+
+        # ── ② 残りを title + start 時刻で照合 ──────────────────────────
+        remaining_rakumo = [e for e in rakumo_events if e.get('id') not in matched_rakumo_ids]
+        remaining_local  = [e for e in local_events  if e.get('rakumo_event_id') not in matched_local_rakumo_ids]
+
+        rakumo_keys = {make_key(e['title'], e['start']): e for e in remaining_rakumo}
+        local_keys  = {make_key(e['title'], e['start']): e for e in remaining_local}
+
+        matched      += [e for k, e in local_keys.items() if k in rakumo_keys]
+        only_in_rakumo = [e for k, e in rakumo_keys.items() if k not in local_keys]
+        only_in_local  = [e for k, e in local_keys.items()  if k not in rakumo_keys]
 
         return {
             'rakumo_events':  rakumo_events,
             'local_events':   local_events,
-            'only_in_rakumo': [e for k, e in rakumo_keys.items() if k not in local_keys],
-            'only_in_local':  [e for k, e in local_keys.items()  if k not in rakumo_keys],
-            'matched':        [e for k, e in rakumo_keys.items() if k in local_keys],
+            'only_in_rakumo': only_in_rakumo,
+            'only_in_local':  only_in_local,
+            'matched':        matched,
             'error':          None,
         }
 
