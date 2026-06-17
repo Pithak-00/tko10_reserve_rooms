@@ -268,6 +268,7 @@
             <th>日時</th>
             <th>件名</th>
             <th>予約者</th>
+            <th>予約ID</th>
           </tr>
         </thead>
         <tbody>
@@ -282,6 +283,10 @@
             </td>
             <td>{{ e.title }}</td>
             <td>{{ e.organizer|default:"—" }}</td>
+            <td style="white-space:nowrap;">
+              <a href="{% url 'reservation_detail' e.id %}" target="_blank"
+                 style="color:#3182ce; font-size:12px;">#{{ e.id }}</a>
+            </td>
           </tr>
           {% endfor %}
         </tbody>

@@ -294,8 +294,13 @@ class RakumoSyncService:
                 is_all_day = 'date' in start_raw and 'dateTime' not in start_raw
 
                 if is_all_day:
-                    start_dt = datetime.fromisoformat(start_raw['date']).replace(tzinfo=dt_timezone.utc)
-                    end_dt   = datetime.fromisoformat(end_raw['date']).replace(tzinfo=dt_timezone.utc)
+                    from zoneinfo import ZoneInfo as _ZoneInfo
+                    _jst = _ZoneInfo('Asia/Tokyo')
+                    # date 形式は「その日の JST 00:00」を意味するため JST で解釈する。
+                    # UTC で replace すると make_key での JST 変換後が 09:00 になり
+                    # ローカル予約（JST 00:00 保存）とのキーが不一致になるバグを防ぐ。
+                    start_dt = datetime.fromisoformat(start_raw['date']).replace(tzinfo=_jst)
+                    end_dt   = datetime.fromisoformat(end_raw['date']).replace(tzinfo=_jst)
                 else:
                     start_dt = datetime.fromisoformat(start_raw['dateTime'])
                     end_dt   = datetime.fromisoformat(end_raw['dateTime'])

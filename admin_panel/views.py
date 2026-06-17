@@ -1152,6 +1152,10 @@ class RakumoDiffView(StaffRequiredMixin, View):
             messages.error(request, '日付の形式が正しくありません。')
             return render(request, self.template_name, context)
 
+        if dt_from >= dt_to - timedelta(days=1):
+            messages.error(request, '終了日は開始日より後の日付を指定してください。')
+            return render(request, self.template_name, context)
+
         from reservations.services.rakumo_sync import RakumoSyncService
         svc = RakumoSyncService()
 
