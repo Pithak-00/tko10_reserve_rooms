@@ -280,6 +280,15 @@ function handleEventDrop(info) {
           const fixedEnd = new Date(res.start.getTime() + 30 * 60 * 1000);
           info.event.setEnd(fixedEnd);
         }
+        // display_as_allday 終日予約をドロップ後に 08:00〜22:00 へ正規化
+        // （FullCalendar はドロップ先の時間スロットに置くため、全幅表示に戻す）
+        if (treatAsAllday) {
+          const d        = res.start;
+          const newStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(),  8, 0, 0);
+          const newEnd   = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 22, 0, 0);
+          info.event.setStart(newStart, { maintainDuration: false });
+          info.event.setEnd(newEnd);
+        }
         showUndoToast('予約を変更しました', () => { info.revert(); });
       })
       .catch(err => {
