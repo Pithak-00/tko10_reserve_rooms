@@ -32,6 +32,9 @@
           <a href="{% url 'csv_import' %}"
              class="btn btn-light btn-md"
              style="margin-right:8px">CSVインポート画面へ &rsaquo;</a>
+          <a href="{% url 'csv_delete' %}"
+             class="btn btn-light btn-md"
+             style="margin-right:8px">CSV一括削除画面へ &rsaquo;</a>
           <button type="button"
                   class="btn btn-primary btn-md"
                   onclick="openUserModal('create')">＋ ユーザーを追加</button>
@@ -146,6 +149,7 @@
                       </button>
                     {% else %}
                       <form method="post"
+                            id="disable-form-{{ user.id }}"
                             action="{% url 'user_toggle_active' user.pk %}"
                             class="logout-form">
                         {% csrf_token %}

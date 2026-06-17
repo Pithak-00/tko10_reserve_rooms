@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CSV一括削除 | 会議室予約システム</title>
+    {% load static %}
+  <link rel="icon" type="image/webp" href="{% static 'image/bold-logo.webp' %}">
+    <link rel="stylesheet" href="{% static 'css/common.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/room_admin.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/csv_import.css' %}" />
+  </head>
+  <body>
+    <!-- ヘッダー -->
+    <div class="logo between">
+      <div class="header-logo">
+        <a href="/">
+          <img src="{% static 'image/bold-logo.webp' %}" alt="logo" />
+        </a>
+        <span>社内会議室予約システム：CSVインポート</span>
+      </div>
+      <div class="top-links">
+        <a href="{% url 'reservation_timeline' %}">会議室の一覧</a>
+        <span class="sep">｜</span>
+        <a href="{% url 'calendar' %}">カレンダー</a>
+        <span class="sep">｜</span>
+        <a href="{% url 'my_reservations' %}">自分の予約</a>
+        <span class="sep">｜</span>
+        <span class="header-username">{{ request.user.name }}さん</span>
+        <form method="post" action="{% url 'logout' %}" class="logout-form">
+          {% csrf_token %}
+          <button type="submit" class="logout-btn-tab">ログアウト</button>
+        </form>
+      </div>
+    </div>
+    <!-- メインコンテナ -->
+    <div class="calendar-container">
+      <!-- ツールバー -->
+      <div class="calendar-toolbar">
+        <div class="toolbar-left">
+          <span class="page-title">ユーザー一括削除（CSVインポート）</span>
+        </div>
+      </div>
+      <!-- フラッシュメッセージ（フォームエラー） -->
+      {% if form.non_field_errors %}
+        <div class="flash-error">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+      {% endif %}
+      {% if form.csv_file.errors %}
+        <div class="flash-error">
+          {% for error in form.csv_file.errors %}{{ error }}{% endfor %}
+        </div>
+      {% endif %}
+      <div class="admin-card" style="padding: 0; overflow: hidden">
+        <!-- ===== STEP 1 ===== -->
+        <div class="list-header">STEP1　CSVファイルを選択してアップロード</div>
+        <div class="step-body">
+          <p class="format-desc">
+            対応フォーマット：<code>UTF-8</code> または <code>Shift-JIS</code>
+            <br class="sp-only-br"> <span class="pc-only-sep">／</span> 列構成：<code>ユーザーID</code>
+            <br>
+            <span class="desc-note">※ 1行目はヘッダー行としてスキップされます</span>
+          </p>
+          <form method="post" enctype="multipart/form-data" action="{% url 'csv_delete' %}">
+            {% csrf_token %}
+            <div class="file-input-row">
+              {{ form.csv_file }}
+              <button type="submit" class="btn btn-primary btn-md btn-upload">アップロード</button>
+            </div>
+          </form>
+        </div>
+        {% if preview_rows is not None %}
+          <!-- ===== STEP 2 ===== -->
+          <div class="list-header" style="border-top: 1px solid #dce8f5">STEP2　プレビュー確認（取り込み前に内容を確認してください）</div>
+          <!-- サマリー行 -->
+          <div class="preview-summary">
+            <span class="summary-valid">取込対象：{{ valid_count }}件</span>
+            {% if error_count > 0 %}<span class="summary-error">エラー：{{ error_count }}件（スキップ）</span>{% endif %}
+          </div>
+          <!-- プレビューテーブル -->
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>ユーザーID</th>
+                <th>氏名</th>
+                <th>権限</th>
+                <th>所属名</th>
+                <th class="center">取込判定</th>
+                <th>備考</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in preview_rows %}
+                <tr class="{% if not row.is_valid %}row-error{% endif %}">
+                  <td>{{ row.login_id|default:"（空）" }}</td>
+                  <td>
+                    <strong>{{ row.name|default:"（空）" }}</strong>
+                  </td>
+                  <td>
+                    {% if row.role == 'admin' %}
+                      管理者
+                    {% elif row.role == 'user' %}
+                      一般
+                    {% else %}
+                      {{ row.role|default:"―" }}
+                    {% endif %}
+                  </td>
+                  <td>{{ row.dept_name|default:"―" }}</td>
+                  <td class="center">
+                    {% if row.is_valid %}
+                      <span class="badge badge-active">OK</span>
+                    {% else %}
+                      <span class="badge badge-stopped">ERROR</span>
+                    {% endif %}
+                  </td>
+                  <td style="font-size: 13px">{{ row.error|default:"" }}</td>
+                </tr>
+              {% empty %}
+                <tr class="empty-row">
+                  <td colspan="6">データがありません</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <!-- ===== STEP 3 ===== -->
+          <div class="list-header" style="border-top: 1px solid #dce8f5">STEP3　一括削除実行</div>
+          <div class="step-body">
+            {% if error_count > 0 %}
+              <p class="import-note">
+                エラー行（{{ error_count }}件）はスキップされ、有効な {{ valid_count }}件のみ削除されます。
+              </p>
+            {% endif %}
+            <div class="action-group" style="justify-content: flex-start; gap: 10px">
+              <a href="{% url 'user_admin_list' %}" class="btn btn-light btn-md">キャンセル</a>
+              {% if valid_count > 0 %}
+                <form method="post"
+                      action="{% url 'csv_delete_execute' %}"
+                      id="deleteExecuteForm"
+                      class="logout-form">
+                  {% csrf_token %}
+                  <button type="button"
+                          class="btn btn-primary btn-md"
+                          id="openDeleteModal">
+                    一括削除を実行する（{{ valid_count }}件）
+                  </button>
+                </form>
+              {% else %}
+                <button type="button"
+                        class="btn btn-primary btn-md"
+                        disabled
+                        style="opacity: 0.4; cursor: not-allowed">一括削除を実行する（有効行なし）</button>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+      <!-- /.admin-card -->
+    </div>
+    <!-- /.calendar-container -->
+
+    <!-- ===== インポート確認モーダル ===== -->
+    <div class="modal-overlay" id="deleteModal" hidden>
+      <div class="import-modal">
+        <div class="import-modal-header">一括削除の確認</div>
+        <div class="import-modal-body">
+          <p class="import-modal-message">
+            <strong>{{ valid_count }}件</strong>のユーザーを削除します。<br>
+            この操作は取り消せません。よろしいですか？
+          </p>
+        </div>
+        <div class="import-modal-actions">
+          <button type="button" class="btn btn-light btn-md" id="closeDeleteModal">戻る</button>
+          <button type="button" class="btn btn-primary btn-md" id="confirmDelete">実行する</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const modal      = document.getElementById('deleteModal');
+        const openBtn    = document.getElementById('openDeleteModal');
+        const closeBtn   = document.getElementById('closeDeleteModal');
+        const confirmBtn = document.getElementById('confirmDelete');
+        const form       = document.getElementById('deleteExecuteForm');
+
+        if (!openBtn || !modal) return;
+
+        function openModal() {
+          modal.removeAttribute('hidden');
+          modal.classList.add('open');
+        }
+
+        function closeModal() {
+          modal.classList.remove('open');
+          modal.setAttribute('hidden', '');
+        }
+
+        openBtn.addEventListener('click', openModal);
+        closeBtn.addEventListener('click', closeModal);
+
+        modal.addEventListener('click', function (e) {
+          if (e.target === modal) closeModal();
+        });
+
+        confirmBtn.addEventListener('click', function () {
+          form.submit();
+        });
+      }());
+    </script>
+  </body>
+</html>
