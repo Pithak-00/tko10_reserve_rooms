@@ -61,6 +61,13 @@ class Room(models.Model):
     floor = models.IntegerField(null=True, blank=True, verbose_name="階数")
     is_active = models.BooleanField(default=True, verbose_name="利用可能")
 
+    # Rakumo連携: Google Workspace リソースカレンダー ID
+    google_calendar_id = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name="Google カレンダーID（Rakumo会議室）",
+        help_text="例: xxxxx@resource.calendar.google.com"
+    )
+
     # T-06 room_facilities を経由した設備との M2N
     facilities = models.ManyToManyField(
         Facility,
@@ -195,10 +202,23 @@ class Reservation(models.Model):
         related_name='recurrence_instances',
         verbose_name='親予約'
     )
-    # 【追加 F-04-R09】Google カレンダー同期
+    # 【追加 F-04-R09】Google カレンダー同期（個人カレンダー）
     google_event_id = models.CharField(
         max_length=255, blank=True, default='',
         verbose_name='Google カレンダーイベントID'
+    )
+
+    # Rakumo連携: リソースカレンダーのイベントID
+    rakumo_event_id = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name='Rakumo イベントID'
+    )
+
+    # Rakumo連携: この予約がRakumo（本社）側で作成された予約かどうか
+    is_rakumo_source = models.BooleanField(
+        default=False,
+        verbose_name='Rakumo発信予約',
+        help_text='Rakumo（本社Google Calendar）から同期された予約の場合 True。管理者でもキャンセル不可。',
     )
 
     class Meta:
@@ -208,6 +228,7 @@ class Reservation(models.Model):
 
     def __str__(self):
         return self.title
+
 
 
 # ──────────────────────────────────────────────

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rakumo連携設定 | 会議室予約システム</title>
+  {% load static %}
+  <link rel="icon" type="image/webp" href="{% static 'image/bold-logo.webp' %}">
+  <link rel="stylesheet" href="{% static 'css/common.css' %}">
+  <link rel="stylesheet" href="{% static 'css/admin_reservation_list.css' %}">
+  <style>
+    .rakumo-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .rakumo-card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #2d3748;
+      margin: 0 0 16px;
+    }
+    .info-box {
+      background: #ebf8ff;
+      border-left: 4px solid #3182ce;
+      border-radius: 4px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: #2c5282;
+      line-height: 1.7;
+    }
+    .info-box strong { display: block; margin-bottom: 4px; font-size: 14px; }
+    .calendar-id-table { width: 100%; border-collapse: collapse; }
+    .calendar-id-table th {
+      background: #f7fafc;
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 13px;
+      color: #4a5568;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .calendar-id-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #edf2f7;
+      vertical-align: middle;
+    }
+    .calendar-id-table input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e0;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: monospace;
+      color: #2d3748;
+      box-sizing: border-box;
+    }
+    .calendar-id-table input[type="text"]:focus {
+      outline: none;
+      border-color: #3182ce;
+      box-shadow: 0 0 0 2px rgba(49,130,206,0.2);
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+    .badge-ok    { background: #c6f6d5; color: #276749; }
+    .badge-error { background: #fed7d7; color: #9b2c2c; }
+    .badge-none  { background: #e2e8f0; color: #718096; }
+    .badge-testing { background: #fefcbf; color: #744210; }
+    .test-btn {
+      padding: 5px 12px;
+      font-size: 12px;
+      border: 1px solid #3182ce;
+      border-radius: 4px;
+      background: #fff;
+      color: #3182ce;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .test-btn:hover { background: #ebf8ff; }
+    .test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .action-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 20px;
+    }
+    .nav-links {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .nav-link-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid #3182ce;
+      color: #3182ce;
+      background: #fff;
+    }
+    .nav-link-btn.active {
+      background: #3182ce;
+      color: #fff;
+    }
+    .nav-link-btn:hover:not(.active) { background: #ebf8ff; }
+  </style>
+</head>
+<body>
+  <!-- ヘッダー -->
+  <div class="logo between">
+    <div class="header-logo">
+      <a href="/"><img src="{% static 'image/bold-logo.webp' %}" alt="logo"></a>
+      <span>社内会議室予約システム：Rakumo連携設定</span>
+    </div>
+    {% include 'includes/header_nav_admin.html' %}
+  </div>
+
+  <div class="calendar-container">
+    <div class="calendar-toolbar">
+      <div class="toolbar-left">
+        <span class="page-title">Rakumo連携設定</span>
+      </div>
+    </div>
+
+    <!-- ページナビ -->
+    <div class="nav-links">
+      <a href="{% url 'rakumo_sync' %}" class="nav-link-btn active">① カレンダーID設定</a>
+      <a href="{% url 'rakumo_diff' %}" class="nav-link-btn">② 差分確認</a>
+    </div>
+
+    {% if messages %}
+      {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags }}" style="margin-bottom:16px; padding:12px 16px; border-radius:6px;
+          background:{% if 'success' in msg.tags %}#c6f6d5{% else %}#fed7d7{% endif %};
+          color:{% if 'success' in msg.tags %}#276749{% else %}#9b2c2c{% endif %}; font-size:13px;">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    <!-- 説明 -->
+    <div class="info-box">
+      <strong>🔗 Rakumo連携のしくみ</strong>
+      Rakumo カレンダーは Google Workspace のリソースカレンダーとリアルタイム同期しています。<br>
+      各会議室に対応する <b>Google カレンダーID</b>（例: <code>xxxx@resource.calendar.google.com</code>）を設定することで、
+      Rakumo側の予約情報を今回のシステムと比較できるようになります。<br><br>
+      カレンダーIDは <b>Google Workspace 管理コンソール</b> → 「ディレクトリ」→「建物とリソース」→ 各会議室の「カレンダーID」で確認できます。
+    </div>
+
+    <!-- カレンダーID設定フォーム -->
+    <div class="rakumo-card">
+      <h2>会議室ごとのGoogle カレンダーID設定</h2>
+      <form method="post">
+        {% csrf_token %}
+        <table class="calendar-id-table">
+          <thead>
+            <tr>
+              <th style="width:25%">会議室名</th>
+              <th style="width:45%">Google カレンダーID</th>
+              <th style="width:30%">接続テスト</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for room in rooms %}
+            <tr>
+              <td><strong>{{ room.name }}</strong></td>
+              <td>
+                <input type="text"
+                       name="cal_id_{{ room.pk }}"
+                       id="cal_id_{{ room.pk }}"
+                       value="{{ room.google_calendar_id }}"
+                       placeholder="例: xxxx@resource.calendar.google.com">
+              </td>
+              <td>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button type="button"
+                          class="test-btn"
+                          onclick="testConnection({{ room.pk }}, this)"
+                          {% if not room.google_calendar_id %}disabled{% endif %}>
+                    接続テスト
+                  </button>
+                  <span class="status-badge badge-none" id="status_{{ room.pk }}">
+                    {% if room.google_calendar_id %}未テスト{% else %}ID未設定{% endif %}
+                  </span>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="3" style="text-align:center; color:#718096; padding:20px;">
+                有効な会議室がありません。
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div class="action-bar">
+          <button type="submit" class="btn btn-primary btn-md">カレンダーIDを保存</button>
+          <a href="{% url 'rakumo_diff' %}" class="btn btn-dark btn-md">② 差分確認へ →</a>
+        </div>
+      </form>
+    </div>
+
+    <!-- 管理コンソールへのリンク -->
+    <div class="rakumo-card" style="background:#f7fafc;">
+      <h2>📋 カレンダーIDの確認方法</h2>
+      <ol style="font-size:13px; color:#4a5568; line-height:2; margin:0; padding-left:20px;">
+        <li><a href="https://admin.google.com" target="_blank" rel="noopener" style="color:#3182ce;">Google Workspace 管理コンソール</a> にアクセス</li>
+        <li>「ディレクトリ」→「建物とリソース」→「リソースを管理」</li>
+        <li>各会議室リソースをクリック → 「カレンダーID」をコピー</li>
+        <li>上記フォームに貼り付けて「保存」→「接続テスト」で動作確認</li>
+      </ol>
+    </div>
+  </div>
+
+  <script src="{% static 'js/common.js' %}"></script>
+  <script>
+    const CSRF_TOKEN = '{{ csrf_token }}';
+
+    function testConnection(roomId, btn) {
+      const statusEl = document.getElementById('status_' + roomId);
+      const calIdInput = document.getElementById('cal_id_' + roomId);
+      const calId = calIdInput.value.trim();
+
+      if (!calId) {
+        statusEl.textContent = 'ID未設定';
+        statusEl.className = 'status-badge badge-none';
+        return;
+      }
+
+      btn.disabled = true;
+      statusEl.textContent = 'テスト中…';
+      statusEl.className = 'status-badge badge-testing';
+
+      fetch('{% url "rakumo_test_connection" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CSRF_TOKEN,
+        },
+        body: JSON.stringify({ room_id: roomId }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          statusEl.textContent = `✓ 接続OK（直近7日: ${data.event_count}件）`;
+          statusEl.className = 'status-badge badge-ok';
+        } else {
+          statusEl.textContent = `✗ ${data.error}`;
+          statusEl.className = 'status-badge badge-error';
+        }
+      })
+      .catch(() => {
+        statusEl.textContent = '通信エラー';
+        statusEl.className = 'status-badge badge-error';
+      })
+      .finally(() => { btn.disabled = false; });
+    }
+
+    // カレンダーID入力時にテストボタンを有効化
+    document.querySelectorAll('input[name^="cal_id_"]').forEach(input => {
+      const roomId = input.name.replace('cal_id_', '');
+      input.addEventListener('input', () => {
+        const btn = input.closest('tr').querySelector('.test-btn');
+        btn.disabled = !input.value.trim();
+        if (!input.value.trim()) {
+          const statusEl = document.getElementById('status_' + roomId);
+          statusEl.textContent = 'ID未設定';
+          statusEl.className = 'status-badge badge-none';
+        }
+      });
+    });
+
+  </script>
+</body>
+</html>

@@ -42,9 +42,7 @@ function closeModalOnOverlay(e) {
 document.addEventListener('DOMContentLoaded', function () {
   const el = document.getElementById('fullcalendar');
   const rooms = JSON.parse(el.dataset.rooms || '[]');
-  //　↓コメントアウト。日次表示の設定を追加　20260605
-  //const fcView = el.dataset.fcView || 'timeGridWeek';
-  const fcView =window.innerWidth <= 768 ? 'timeGridDay' : (el.dataset.fcView || 'timeGridWeek');
+  const fcView = el.dataset.fcView || 'timeGridWeek';
   const _now = new Date();
   const initialDate = el.dataset.date ||
     `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
@@ -65,6 +63,7 @@ document.addEventListener('DOMContentLoaded', function () {
     scrollTime: '08:00:00',
     nowIndicator: true,
     dayMaxEvents: 2,
+    allDaySlot: false,     // 終日行を非表示（終日予約はメイングリッドに 08:00〜22:00 で表示）
     editable: true,
     selectable: true,
     headerToolbar: false,  // カスタムツールバー使用
@@ -81,11 +80,25 @@ document.addEventListener('DOMContentLoaded', function () {
       const title = arg.event.title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const room  = (ep.room_name   || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const reserver = (ep.reserved_by || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const isRakumo      = !!ep.is_rakumo;
+      const isAlldayDisp  = !!ep.display_as_allday;
+      const rakumoBadge = '<span style="display:inline-block;background:#718096;color:#fff;font-size:13px;' +
+        'font-weight:700;padding:2px 7px;border-radius:3px;margin-right:3px;' +
+        'vertical-align:middle;line-height:1.4;">本社使用</span>';
 
       if (arg.view.type === 'dayGridMonth') {
-        // 月ビュー：ドット + 時刻ラベル + 件名 + 予約者
+        // 月ビュー：ドット + 時刻ラベル + (Rakumoならバッジのみ / 通常なら件名+予約者)
         const color = arg.event.backgroundColor || '#3182CE';
-        const label = arg.event.allDay ? '終日' : arg.timeText;
+        // 終日表示イベントは時刻の代わりに「終日」ラベルを出す
+        const label = isAlldayDisp ? '終日' : arg.timeText;
+        if (isRakumo) {
+          const roomSub = room ? '<span class="mev-sub">' + room + '</span>' : '';
+          return {
+            html: '<span class="mev-dot" style="background-color:' + color + '"></span>' +
+                  '<span class="mev-time">' + label + '</span>' +
+                  rakumoBadge + roomSub,
+          };
+        }
         const subParts = [room, reserver].filter(Boolean);
         const sub = subParts.length
           ? '<span class="mev-sub">' + subParts.join(' ／ ') + '</span>'
@@ -98,7 +111,30 @@ document.addEventListener('DOMContentLoaded', function () {
         };
       }
 
-      // 週・日ビュー：件名の下に「会議室 ／ 予約者」を小さく表示
+      // 週・日ビュー
+      if (isRakumo) {
+        // Rakumo：バッジ + 会議室名（件名・予約者非表示）
+        const roomSubHtml = room ? '<div class="fc-event-sub">' + room + '</div>' : '';
+        if (arg.timeText) {
+          return {
+            html: '<div class="fc-event-main-frame">' +
+                  '<div class="fc-event-title-container">' +
+                  '<div class="fc-event-title fc-sticky">' + rakumoBadge + '</div>' +
+                  roomSubHtml +
+                  '<div class="fc-event-time">' + arg.timeText + '</div>' +
+                  '</div></div>',
+          };
+        }
+        return {
+          html: '<div class="fc-event-main-frame">' +
+                '<div class="fc-event-title-container">' +
+                '<div class="fc-event-title fc-sticky">' + rakumoBadge + '</div>' +
+                roomSubHtml +
+                '</div></div>',
+        };
+      }
+
+      // 週・日ビュー（通常予約）：件名の下に「会議室 ／ 予約者」を小さく表示
       const subParts = [room, reserver].filter(Boolean);
       const subHtml = subParts.length
         ? '<div class="fc-event-sub">' + subParts.join(' ／ ') + '</div>'
@@ -107,7 +143,6 @@ document.addEventListener('DOMContentLoaded', function () {
       if (arg.timeText) {
         return {
           html: '<div class="fc-event-main-frame">' +
-                
                 '<div class="fc-event-title-container">' +
                 '<div class="fc-event-title fc-sticky">' + title + '</div>' +
                 subHtml +
@@ -156,6 +191,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // 週・日ビュー：背景色に応じて白 or 黒を選択
         info.el.style.color = getTextColor(info.event.backgroundColor || '#3182CE');
       }
+      // can_edit が false の場合のみ DnD を無効化（display_as_allday は can_edit で制御）
       if (!info.event.extendedProps.can_edit) {
         info.el.setAttribute('draggable', 'false');
         info.el.style.cursor = 'default';
@@ -168,28 +204,50 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // DnD コールバック（eventDrop / eventResize 共通）
 function handleEventDrop(info) {
-  const res     = info.event;
-  const isAllDay = res.allDay;
+  const res          = info.event;
+  const isAllDay     = res.allDay;
+  const isAlldayDisp = !!res.extendedProps.display_as_allday;
+
+  // display_as_allday な終日予約の判定：
+  //   同日にドロップ → 禁止（元に戻す）
+  //   別日にドロップ → 終日予約として新しい日付に移動
+  let treatAsAllday = isAllDay;
+  if (isAlldayDisp) {
+    const origD   = info.oldEvent.start;
+    const newD    = res.start;
+    const sameDay = origD.getFullYear() === newD.getFullYear() &&
+                    origD.getMonth()    === newD.getMonth()    &&
+                    origD.getDate()     === newD.getDate();
+    if (sameDay) {
+      info.revert();
+      return;
+    }
+    treatAsAllday = true;
+  }
 
   // 確認メッセージ
-  const msg = isAllDay
+  const endTime = res.end || new Date(res.start.getTime() + 30 * 60 * 1000);
+  const msg = treatAsAllday
     ? `${formatDate(res.start)} 終日\nに変更しますか？`
-    : `${formatDate(res.start)} ${formatTime(res.start)}〜${formatTime(res.end)}\nに変更しますか？`;
+    : `${formatDate(res.start)} ${formatTime(res.start)}〜${formatTime(endTime)}\nに変更しますか？`;
 
   // API へ送るペイロード
   const payload = {
     room_id:    res.extendedProps.room_id,
-    is_all_day: isAllDay,
+    is_all_day: treatAsAllday,
   };
-  if (isAllDay) {
+  if (treatAsAllday) {
     // 終日の場合は日付文字列だけ送る（toISOString() はタイムゾーンで日付がずれる場合があるため）
-    payload.date = res.startStr.slice(0, 10);  // 'YYYY-MM-DD'
+    if (isAlldayDisp) {
+      // display_as_allday イベントは 08:00 起点のためローカル日付で抽出する
+      const d = res.start;
+      payload.date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    } else {
+      payload.date = res.startStr.slice(0, 10);  // 'YYYY-MM-DD'
+    }
   } else {
     payload.start_at = res.start.toISOString();
-    // 終日→通常への切り替え時に res.end が null になる場合があるため、
-    // その場合は開始時刻の30分後をデフォルトとする
-    const endDate = res.end || new Date(res.start.getTime() + 30 * 60 * 1000);
-    payload.end_at = endDate.toISOString();
+    payload.end_at   = endTime.toISOString();
   }
 
   showConfirm(
@@ -219,6 +277,15 @@ function handleEventDrop(info) {
         if (!isAllDay && !res.end) {
           const fixedEnd = new Date(res.start.getTime() + 30 * 60 * 1000);
           info.event.setEnd(fixedEnd);
+        }
+        // display_as_allday 終日予約をドロップ後に 08:00〜22:00 へ正規化
+        // （FullCalendar はドロップ先の時間スロットに置くため、全幅表示に戻す）
+        if (treatAsAllday) {
+          const d        = res.start;
+          const newStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(),  8, 0, 0);
+          const newEnd   = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 22, 0, 0);
+          info.event.setStart(newStart, { maintainDuration: false });
+          info.event.setEnd(newEnd);
         }
         showUndoToast('予約を変更しました', () => { info.revert(); });
       })
@@ -274,12 +341,17 @@ function handleEventClick(info) {
   const po = document.querySelector('.reservation-popover');
 
   // 内容を更新
-  po.querySelector('.popover-title').textContent = ev.title;
+  const isRakumoEv = !!ep.is_rakumo;
+  po.querySelector('.popover-title').textContent = isRakumoEv ? '本社使用' : ev.title;
   po.querySelector('.popover-title').style.backgroundColor = ev.backgroundColor;
-  po.querySelector('[data-field="datetime"]').textContent =
-    `${formatDate(ev.start)} ${formatTime(ev.start)}〜${formatTime(ev.end)}`;
+  po.querySelector('[data-field="datetime"]').textContent = ep.display_as_allday
+    ? `${formatDate(ev.start)} 終日`
+    : `${formatDate(ev.start)} ${formatTime(ev.start)}〜${formatTime(ev.end)}`;
   po.querySelector('[data-field="room"]').textContent = ep.room_name;
-  po.querySelector('[data-field="reserver"]').textContent = ep.reserved_by;
+  // Rakumo予約は予約者を非表示
+  const reserverRow = po.querySelector('[data-field="reserver"]')?.closest('p');
+  if (reserverRow) reserverRow.style.display = isRakumoEv ? 'none' : '';
+  po.querySelector('[data-field="reserver"]').textContent = isRakumoEv ? '' : ep.reserved_by;
 
   // 権限に応じてボタン表示
   const editBtn    = po.querySelector('.btn-edit');
@@ -289,6 +361,8 @@ function handleEventClick(info) {
 
   editBtn.style.display    = ep.can_edit ? '' : 'none';  // 編集：自分の予約 or 管理者
   cancelForm.style.display = ep.can_edit ? '' : 'none';  // キャンセル：自分の予約 or 管理者
+  // Rakumo予約は詳細ページなし
+  detailBtn.style.display  = isRakumoEv ? 'none' : '';
   editBtn.href     = `/reservations/${ev.id}/edit/`;
   detailBtn.href   = `/reservations/${ev.id}/`;
 

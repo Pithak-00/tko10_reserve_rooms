@@ -32,6 +32,8 @@ except ImportError:
         def update_event(self, r): pass
         def delete_event(self, r): pass
 
+from .services.rakumo_sync import RakumoSyncService
+
 logger = logging.getLogger(__name__)
 
 # google_auth_oauthlib は F-04-R09 Google 同期機能でのみ使用
@@ -226,21 +228,27 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
                 can_edit    = (res.user_id == self.request.user.pk or
                                self.request.user.is_staff)
 
-                # 終日予約は時刻計算をスキップして固定値で登録
+                # Rakumoから同期した予約はグレー「本社使用」として表示
+                is_rakumo_db = res.is_rakumo_source
+                rakumo_color = '#718096'
+
+                # 終日予約はメイングリッドで全幅表示（終日列は廃止）
                 if res.is_all_day:
                     res_list.append({
-                        'id':          res.pk,
-                        'title':       res.title,
-                        'reserved_by': res.reserved_by,
-                        'start_min':   0,
-                        'dur_min':     total_minutes,
-                        'left_px':     0,
-                        'width_px':    0,
-                        'color':       res.color or '#3182CE',
-                        'start_str':   '終日',
-                        'end_str':     '',
-                        'is_all_day':  True,
-                        'can_edit':    can_edit,
+                        'id':               res.pk,
+                        'title':            res.title,
+                        'reserved_by':      res.reserved_by,
+                        'start_min':        0,
+                        'dur_min':          total_minutes,
+                        'left_px':          0,
+                        'width_px':         0,
+                        'color':            rakumo_color if is_rakumo_db else (res.color or '#3182CE'),
+                        'start_str':        '終日',
+                        'end_str':          '',
+                        'is_all_day':       False,   # メイングリッドに描画
+                        'can_edit':         can_edit and not is_rakumo_db,  # Rakumoは常に編集不可
+                        'display_as_allday': True,
+                        'is_rakumo':        is_rakumo_db,
                     })
                     continue
 
@@ -265,13 +273,80 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
                     'dur_min':     dur_min,
                     'left_px':     left_px,
                     'width_px':    width_px,
-                    'color':       res.color or '#3182CE',
+                    'color':       rakumo_color if is_rakumo_db else (res.color or '#3182CE'),
                     'start_str':   local_start.strftime('%H:%M'),
                     'end_str':     local_end.strftime('%H:%M'),
                     'is_all_day':  False,
-                    'can_edit':    can_edit,
+                    'can_edit':    False if is_rakumo_db else can_edit,
+                    'is_rakumo':   is_rakumo_db,
                 })
             room_data.append({'room': room, 'reservations': res_list})
+
+        # ── Rakumo イベントをタイムラインに追加（グレー表示）──
+        try:
+            rakumo_svc = RakumoSyncService()
+            if not rakumo_svc.no_op:
+                # DB で把握済みの Rakumo イベント ID（二重表示防止）
+                existing_rakumo_ids = set(
+                    Reservation.objects.filter(
+                        is_cancelled=False,
+                        rakumo_event_id__gt='',
+                        start_at__lt=day_end,
+                        end_at__gt=day_start,
+                    ).values_list('rakumo_event_id', flat=True)
+                )
+                for rd in room_data:
+                    room_obj = rd['room']
+                    if not room_obj.google_calendar_id:
+                        continue
+                    rakumo_events = rakumo_svc.get_events_for_display(
+                        room_obj.google_calendar_id, day_start, day_end
+                    )
+                    for ev in rakumo_events:
+                        if ev['id'] in existing_rakumo_ids:
+                            continue
+                        if ev['is_all_day']:
+                            rd['reservations'].append({
+                                'id':               f'rakumo_{ev["id"]}',
+                                'title':            ev['title'],
+                                'reserved_by':      ev.get('organizer', ''),
+                                'start_min':        0,
+                                'dur_min':          total_minutes,
+                                'left_px':          0,
+                                'width_px':         0,
+                                'color':            '#718096',
+                                'start_str':        '終日',
+                                'end_str':          '',
+                                'is_all_day':       False,  # メイングリッドに描画
+                                'can_edit':         False,
+                                'is_rakumo':        True,
+                                'display_as_allday': True,
+                            })
+                        else:
+                            s_local = localtime(ev['start'])
+                            e_local = localtime(ev['end'])
+                            s_min = max((s_local.hour - hour_start) * 60 + s_local.minute, 0)
+                            e_min = min((e_local.hour - hour_start) * 60 + e_local.minute, total_minutes)
+                            if e_min <= s_min:
+                                continue
+                            dur = e_min - s_min
+                            rd['reservations'].append({
+                                'id':          f'rakumo_{ev["id"]}',
+                                'title':       ev['title'],
+                                'reserved_by': ev.get('organizer', ''),
+                                'start_min':   s_min,
+                                'dur_min':     dur,
+                                'left_px':     int(s_min * hour_width / 60),
+                                'width_px':    max(int(dur * hour_width / 60), 4),
+                                'color':       '#718096',
+                                'start_str':   s_local.strftime('%H:%M'),
+                                'end_str':     e_local.strftime('%H:%M'),
+                                'is_all_day':  False,
+                                'can_edit':    False,
+                                'is_rakumo':   True,
+                            })
+        except Exception as e:
+            logger.warning(f'ReservationTimelineView: Rakumoイベント取得失敗: {e}')
 
         # ミニカレンダー用データ
         year  = target.year
@@ -432,6 +507,39 @@ class ReservationCreateView(CreateView):
         recurrence_rule = form.cleaned_data.get('recurrence_rule', '')
         reservation.recurrence_rule = recurrence_rule
 
+        # ── Rakumo事前競合チェック ──────────────────────────────
+        try:
+            rakumo_svc = RakumoSyncService()
+            room_obj = Room.objects.get(pk=reservation.room_id)
+            if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                if reservation.is_all_day:
+                    target_date = localtime(reservation.start_at).date()
+                    conflicts = rakumo_svc.check_conflict_with_rakumo_allday(
+                        room_obj.google_calendar_id, target_date,
+                    )
+                    if conflicts:
+                        form.add_error(
+                            None,
+                            f'本社にその日の予約があります。'
+                            '日程を変更してください。'
+                        )
+                        return self.form_invalid(form)
+                else:
+                    conflicts = rakumo_svc.check_conflict_with_rakumo(
+                        room_obj.google_calendar_id,
+                        reservation.start_at,
+                        reservation.end_at,
+                    )
+                    if conflicts:
+                        form.add_error(
+                            None,
+                            f'本社に同じ時間帯の予約があります。'
+                            '時間帯を変更してください。'
+                        )
+                        return self.form_invalid(form)
+        except Exception as e:
+            logger.warning(f'Rakumo conflict check on create failed: {e}')
+
         with transaction.atomic():
             # 会議室行をロックして同時リクエストの割り込みを防ぐ
             Room.objects.select_for_update().get(pk=reservation.room_id)
@@ -461,6 +569,11 @@ class ReservationCreateView(CreateView):
             ),
         )
         GoogleSyncService(self.request.user).create_event(reservation)
+        # Rakumo自動連携（このシステム → Rakumo）
+        try:
+            RakumoSyncService().create_event(reservation)
+        except Exception as e:
+            logger.warning(f'Rakumo sync on create failed: {e}')
         return redirect(self.get_success_url())
 
     def get_success_url(self):
@@ -499,6 +612,41 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
 
         # 変更前の値を保存（detail 生成用）
         old = Reservation.objects.get(pk=reservation.pk)
+
+        # ── Rakumo事前競合チェック ──────────────────────────────
+        try:
+            rakumo_svc = RakumoSyncService()
+            room_obj = Room.objects.get(pk=reservation.room_id)
+            if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                if reservation.is_all_day:
+                    target_date = localtime(reservation.start_at).date()
+                    conflicts = rakumo_svc.check_conflict_with_rakumo_allday(
+                        room_obj.google_calendar_id, target_date,
+                        exclude_rakumo_event_id=reservation.rakumo_event_id or '',
+                    )
+                    if conflicts:
+                        form.add_error(
+                            None,
+                            f'本社にその日の予約があります。'
+                            '日程を変更してください。'
+                        )
+                        return self.form_invalid(form)
+                else:
+                    conflicts = rakumo_svc.check_conflict_with_rakumo(
+                        room_obj.google_calendar_id,
+                        reservation.start_at,
+                        reservation.end_at,
+                        exclude_rakumo_event_id=reservation.rakumo_event_id or '',
+                    )
+                    if conflicts:
+                        form.add_error(
+                            None,
+                            f'本社に同じ時間帯の予約があります。'
+                            '時間帯を変更してください。'
+                        )
+                        return self.form_invalid(form)
+        except Exception as e:
+            logger.warning(f'Rakumo conflict check on update failed: {e}')
 
         with transaction.atomic():
             Room.objects.select_for_update().get(pk=reservation.room_id)
@@ -540,6 +688,11 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
             GoogleSyncService(self.request.user).update_event(self.object)
         except Exception as e:
             logger.warning(f'Google sync on update failed: {e}')
+        # Rakumo自動連携（このシステム → Rakumo）
+        try:
+            RakumoSyncService().update_event(self.object)
+        except Exception as e:
+            logger.warning(f'Rakumo sync on update failed: {e}')
         return redirect(self.get_success_url())
 
     def get_success_url(self):
@@ -553,6 +706,13 @@ def reservation_cancel(request, pk):
 
     if reservation.user != request.user and not request.user.is_staff:
         return HttpResponseForbidden("この予約をキャンセルする権限がありません")
+
+    # Rakumo発信予約は管理者でもキャンセル不可
+    if reservation.is_rakumo_source:
+        return HttpResponseForbidden(
+            "この予約は本社で作成された予約のため、このシステムからはキャンセルできません。"
+            "Rakumo側でキャンセルしてください。"
+        )
 
     reservation.is_cancelled = True
     reservation.save()
@@ -568,7 +728,11 @@ def reservation_cancel(request, pk):
         GoogleSyncService(request.user).delete_event(reservation)
     except Exception as e:
         logger.warning(f'Google sync on cancel failed: {e}')
-
+    # Rakumo自動連携（このシステム → Rakumo）
+    try:
+        RakumoSyncService().delete_event(reservation)
+    except Exception as e:
+        logger.warning(f'Rakumo sync on cancel failed: {e}')
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'calendar'
     return redirect(next_url)
 
@@ -647,23 +811,115 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
                 return JsonResponse([], safe=False)
             qs = qs.filter(user_id__in=user_ids)
 
+        tz_local = timezone.get_current_timezone()
         events = []
         for res in qs:
-            color = res.color or '#3182CE'
+            color    = res.color or '#3182CE'
+            can_edit = res.user == request.user or request.user.is_staff
+            if res.is_all_day:
+                # 終日予約はメイングリッドで 08:00〜22:00 として表示
+                day      = localtime(res.start_at).date()
+                ev_start = timezone.make_aware(datetime.combine(day, dt_time(8,  0)), tz_local).isoformat()
+                ev_end   = timezone.make_aware(datetime.combine(day, dt_time(22, 0)), tz_local).isoformat()
+            else:
+                ev_start = localtime(res.start_at).isoformat()
+                ev_end   = localtime(res.end_at).isoformat()
             events.append({
-                'id': res.id,
-                'title': res.title,
-                'start': localtime(res.start_at).isoformat(),
-                'end':   localtime(res.end_at).isoformat(),
-                'room_id': res.room_id,
-                'room_name': res.room.name,
-                'color': color,
-                'reserved_by': res.reserved_by,
-                'is_owner': res.user == request.user,
-                'can_edit': res.user == request.user or request.user.is_staff,
-                'editable': res.user == request.user or request.user.is_staff,
-                'allDay': res.is_all_day,
+                'id':               res.id,
+                'title':            res.title,
+                'start':            ev_start,
+                'end':              ev_end,
+                'room_id':          res.room_id,
+                'room_name':        res.room.name,
+                'color':            color,
+                'reserved_by':      res.reserved_by,
+                'is_owner':         res.user == request.user,
+                'can_edit':         can_edit,
+                'editable':         can_edit,  # Rakumoはcan_edit=Falseなので自動でDnD無効
+                'allDay':           False,
+                'is_rakumo':        False,
+                'display_as_allday': res.is_all_day,
             })
+
+        # ── Rakumoイベントをリアルタイム取得して追加（グレー表示）──
+        try:
+            rakumo_svc = RakumoSyncService()
+            if not rakumo_svc.no_op:
+                # フィルター対象の会議室IDセットを特定
+                if room_ids_str is not None and room_ids_str != '':
+                    filtered_room_ids = set(
+                        int(x) for x in room_ids_str.split(',') if x.strip().isdigit()
+                    )
+                else:
+                    filtered_room_ids = None  # フィルターなし = 全室対象
+
+                # google_calendar_id が設定されている会議室からRakumoイベントを取得
+                rooms_with_cal = Room.objects.filter(
+                    is_active=True, google_calendar_id__gt=''
+                )
+                if filtered_room_ids is not None:
+                    rooms_with_cal = rooms_with_cal.filter(id__in=filtered_room_ids)
+
+                # start/end を aware datetime に変換
+                if start.tzinfo is None:
+                    start_aware = start.replace(tzinfo=dt_tz.utc)
+                else:
+                    start_aware = start
+                if end.tzinfo is None:
+                    end_aware = end.replace(tzinfo=dt_tz.utc)
+                else:
+                    end_aware = end
+
+                # このシステムで把握済みのRakumoイベントIDセット（グレー二重表示防止）
+                # ・is_rakumo_source=True  … Rakumoから取り込んだ予約
+                # ・rakumo_event_id__gt='' … このシステムからRakumoへ書き込んだ予約
+                # どちらもRakumo上に存在するためグレー表示をスキップする
+                existing_rakumo_ids = set(
+                    Reservation.objects.filter(
+                        is_cancelled=False,
+                        rakumo_event_id__gt='',
+                        start_at__lt=end_aware,
+                        end_at__gt=start_aware,
+                    ).values_list('rakumo_event_id', flat=True)
+                )
+
+                for room in rooms_with_cal:
+                    rakumo_events = rakumo_svc.get_events_for_display(
+                        room.google_calendar_id, start_aware, end_aware
+                    )
+                    for ev in rakumo_events:
+                        if ev['id'] in existing_rakumo_ids:
+                            continue  # 既にDBに取り込み済みのものはスキップ
+
+                        # 終日イベントはメイングリッドで 08:00〜22:00 として表示
+                        if ev['is_all_day']:
+                            day      = localtime(ev['start']).date()
+                            ev_start = timezone.make_aware(datetime.combine(day, dt_time(8,  0)), tz_local).isoformat()
+                            ev_end   = timezone.make_aware(datetime.combine(day, dt_time(22, 0)), tz_local).isoformat()
+                        else:
+                            ev_start = localtime(ev['start']).isoformat()
+                            ev_end   = localtime(ev['end']).isoformat()
+
+                        events.append({
+                            'id':                f'rakumo_{ev["id"]}',
+                            'title':             ev['title'],
+                            'start':             ev_start,
+                            'end':               ev_end,
+                            'room_id':           room.id,
+                            'room_name':         room.name,
+                            'color':             '#718096',
+                            'textColor':         '#FFFFFF',
+                            'reserved_by':       ev.get('organizer', ''),
+                            'is_owner':          False,
+                            'can_edit':          False,
+                            'editable':          False,
+                            'allDay':            False,
+                            'is_rakumo':         True,
+                            'display_as_allday': ev['is_all_day'],
+                        })
+        except Exception as e:
+            logger.warning(f'CalendarEventsAPI: Rakumoイベント取得失敗: {e}')
+
         return JsonResponse(events, safe=False)
     
 
@@ -706,6 +962,37 @@ class ReservationMoveView(LoginRequiredMixin, View):
                 else start_at + timedelta(minutes=30)  # フォールバック：30分後
             )
 
+        # ── Rakumo 競合チェック ──────────────────────────────────
+        try:
+            rakumo_svc = RakumoSyncService()
+            room_obj = Room.objects.get(pk=room_id)
+            if not rakumo_svc.no_op and room_obj.google_calendar_id:
+                if is_all_day:
+                    target_date = localtime(start_at).date()
+                    conflicts = rakumo_svc.check_conflict_with_rakumo_allday(
+                        room_obj.google_calendar_id, target_date,
+                        exclude_rakumo_event_id=reservation.rakumo_event_id or '',
+                    )
+                    if conflicts:
+                        return JsonResponse(
+                            {'error': f'本社にその日の予約があります。日程を変更してください。'},
+                            status=400,
+                        )
+                else:
+                    conflicts = rakumo_svc.check_conflict_with_rakumo(
+                        room_obj.google_calendar_id,
+                        start_at,
+                        end_at,
+                        exclude_rakumo_event_id=reservation.rakumo_event_id or '',
+                    )
+                    if conflicts:
+                        return JsonResponse(
+                            {'error': f'本社に同じ時間帯の予約があります。時間帯を変更してください。'},
+                            status=400,
+                        )
+        except Exception as e:
+            logger.warning(f'ReservationMoveView: Rakumo競合チェック失敗: {e}')
+
         with transaction.atomic():
             # 会議室行をロックして同時リクエストの割り込みを防ぐ
             Room.objects.select_for_update().get(pk=room_id)
@@ -746,6 +1033,11 @@ class ReservationMoveView(LoginRequiredMixin, View):
             GoogleSyncService(request.user).update_event(reservation)
         except Exception as e:
             logger.warning(f'Google sync failed: {e}')
+        # Rakumo自動連携（このシステム → Rakumo）
+        try:
+            RakumoSyncService().update_event(reservation)
+        except Exception as e:
+            logger.warning(f'Rakumo sync on move failed: {e}')
 
         color = reservation.color or '#3182CE'
         return JsonResponse({'id': reservation.id, 'color': color}, status=200)

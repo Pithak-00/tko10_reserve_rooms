@@ -136,32 +136,28 @@ LOGOUT_REDIRECT_URL = "/accounts/login/"
 # ユーザーモデル
 AUTH_USER_MODEL = "accounts.User"
 
-# Google OAuth 2.0
+# Google OAuth 2.0（個人カレンダー同期用・既存機能）
 GOOGLE_CLIENT_ID     = os.environ.get('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
 GOOGLE_REDIRECT_URI  = os.environ.get(
     'GOOGLE_REDIRECT_URI',
-    'http://localhost:8000/reservations/auth/google/callback/'
+    'http://localhost/reservations/auth/google/callback/'
 )
 GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
-# INSTALLED_APPS に追加（未追加の場合）
-# 'rest_framework',
-
-# qq .env ファイル（プロジェクトルートに作成）qqqqqqqqqqqqqqqqq
-# GOOGLE_CLIENT_ID=<Google Cloud Console で取得した値>
-# GOOGLE_CLIENT_SECRET=<同上>
-# GOOGLE_REDIRECT_URI=http://localhost:8000/reservations/auth/google/callback/
-
-# qq Google Cloud Console での設定手順 qqqqqqqqqqqqqqqqqqqqqqq
-# 1. https://console.cloud.google.com/ にアクセス
-# 2. 「APIとサービス」→「認証情報」→「OAuthクライアントIDを作成」
-# 3. アプリケーションの種類：「ウェブアプリケーション」を選択
-# 4. 承認済みリダイレクトURIに追加：
-#    http://localhost:8000/reservations/auth/google/callback/（開発用）
-#    https://yourdomain.com/reservations/auth/google/callback/（本番用）
-# 5. 「Google Calendar API」を有効化（「ライブラリ」から検索して有効化）
-# 6. クライアントID・シークレットを .env に記載
+# ─────────────────────────────────────────────────────────
+# Rakumo連携: サービスアカウント認証（ドメイン全体委任）
+# ─────────────────────────────────────────────────────────
+# credentials/service_account.json にJSONキーを配置してください
+# （credentials/ フォルダは .gitignore 済み）
+# ドメイン全体の委任を使用します。admin.google.com でスコープ登録済みであること。
+GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get(
+    'GOOGLE_SERVICE_ACCOUNT_FILE',
+    os.path.join(BASE_DIR, 'credentials', 'service_account.json')
+)
+# なりすます Google Workspace 管理者アカウント（ドメイン全体委任用）
+# .env に GOOGLE_DELEGATED_ADMIN=xxx@yourdomain.com を設定してください
+GOOGLE_DELEGATED_ADMIN = os.environ.get('GOOGLE_DELEGATED_ADMIN', '')
 
 # qq python-dotenv で .env を読み込む（manage.py と同階層に.env）q
 # pip install python-dotenv

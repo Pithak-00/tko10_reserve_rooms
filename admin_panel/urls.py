@@ -5,6 +5,9 @@ from .views import (
     RoomUpdateView,
     RoomDeleteView,
     RoomToggleActiveView,
+    RakumoSyncView,
+    RakumoTestConnectionView,
+    RakumoDiffView,
     UserListView,
     UserCreateView,
     UserUpdateView,
@@ -86,12 +89,11 @@ urlpatterns = [
     path('departments/<int:pk>/delete/',   DepartmentDeleteView.as_view(), name='department_delete'),
     # 操作ログ
     path('operation-log/',                 OperationLogView.as_view(),     name='operation_log'),
-
     # F-25: CSV一括削除
-    path("users/csv-delete/", CSVDeleteView.as_view(), name="csv_delete"),
-    path(
-        "users/csv-delete/execute/",
-        CSVDeleteExecuteView.as_view(),
-        name="csv_delete_execute",
-    ),
+    path("users/csv-delete/",              CSVDeleteView.as_view(),        name="csv_delete"),
+    path("users/csv-delete/execute/",      CSVDeleteExecuteView.as_view(), name="csv_delete_execute",),
+    # Rakumo連携
+    path('rakumo/',                        RakumoSyncView.as_view(),            name='rakumo_sync'),
+    path('rakumo/test-connection/',        RakumoTestConnectionView.as_view(),  name='rakumo_test_connection'),
+    path('rakumo/diff/',                   RakumoDiffView.as_view(),            name='rakumo_diff'),
 ]
