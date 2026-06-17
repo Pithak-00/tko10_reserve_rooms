@@ -14,9 +14,6 @@ RUN apt-get update && apt-get install -y \
         which \
         findutils \
         procps \
-        hostname \
-        tar \
-        cron \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /var/run/sshd /home/vscode/.ssh /workspace
