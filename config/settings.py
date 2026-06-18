@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-)s=wy#0ecpfx92^f^m8d-fy+@rzh+^(o7um4t$i1!3twyo+krm"
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -79,10 +79,19 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE":   os.environ.get("DB_ENGINE",   "django.db.backends.sqlite3"),
+        "NAME":     os.environ.get("DB_NAME",     str(BASE_DIR / "db.sqlite3")),
+        "USER":     os.environ.get("DB_USER",     ""),
+        "PASSWORD": os.environ.get("DB_PASSWORD", ""),
+        "HOST":     os.environ.get("DB_HOST",     ""),
+        "PORT":     os.environ.get("DB_PORT",     ""),
+        "OPTIONS": {
+            **({"sslmode": os.environ["DB_SSLMODE"]}
+               if os.environ.get("DB_SSLMODE") else {}),
+        },
     }
 }
+
 
 
 # Password validation
@@ -165,7 +174,7 @@ GOOGLE_DELEGATED_ADMIN = os.environ.get('GOOGLE_DELEGATED_ADMIN', '')
 # from dotenv import load_dotenv
 # load_dotenv()
 CSRF_TRUSTED_ORIGINS = [
-    'https://tko9.bold-rooms-reserve.com',  # 新しいHTTPSのURLをスキーム付きで許可
+    'https://tko10.bold-rooms-reserve.com',  # 新しいHTTPSのURLをスキーム付きで許可
 ]
 
 #TODO:ローカル環境で実行のため一旦コメントアウト
