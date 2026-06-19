@@ -19,8 +19,9 @@ sudo -E -u root /usr/bin/docker builder prune -a -f
 sudo cp $DATA_DIR/.env $APP_DIR/.env
  
 # ECRにログインしてイメージをpull
+ECR_REGISTRY=$(echo $IMAGE_URI | cut -d'/' -f1)
 aws ecr get-login-password --region $AWS_DEFAULT_REGION | \
-  sudo docker login --username AWS --password-stdin
+  sudo docker login --username AWS --password-stdin $ECR_REGISTRY
 sudo docker pull $IMAGE_URI
  
 # APP_IMAGE環境変数を設定してコンテナ起動（--buildなし：ECRイメージをそのまま使用）
