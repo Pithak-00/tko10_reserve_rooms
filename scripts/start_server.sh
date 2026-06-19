@@ -10,8 +10,10 @@ cd "$APP_DIR"
 IMAGE_URI=$(cat $APP_DIR/imagedefinitions.json | \
   python3 -c "import sys,json; print(json.load(sys.stdin)[0]['imageUri'])")
  
-# 既存コンテナを停止・クリーンアップ
+# 既存コンテナを停止・クリーンアップ（ポート競合を防ぐため全コンテナ強制停止）
 sudo -E -u root /usr/bin/docker compose down || true
+sudo docker stop $(sudo docker ps -q) 2>/dev/null || true
+sudo docker rm -f $(sudo docker ps -aq) 2>/dev/null || true
 sudo -E -u root /usr/bin/docker system prune -a -f
 sudo -E -u root /usr/bin/docker builder prune -a -f
  
