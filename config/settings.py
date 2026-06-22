@@ -174,7 +174,7 @@ GOOGLE_DELEGATED_ADMIN = os.environ.get('GOOGLE_DELEGATED_ADMIN', '')
 # from dotenv import load_dotenv
 # load_dotenv()
 CSRF_TRUSTED_ORIGINS = [
-    'https://tko10.bold-rooms-reserve.com',  # 新しいHTTPSのURLをスキーム付きで許可
+    'https://tko10-prd.bold-rooms-reserve.com',  # 新しいHTTPSのURLをスキーム付きで許可
 ]
 
 #TODO:ローカル環境で実行のため一旦コメントアウト
