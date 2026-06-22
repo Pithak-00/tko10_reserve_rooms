@@ -90,15 +90,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const roomSub = room ? '<span class="mev-sub">' + room + '</span>' : '';
         if (isRakumo) {
           return {
-            html: '<span class="mev-dot" style="background-color:' + color + '"></span>' +
-                  rakumoBadge + roomSub,
+            html: rakumoBadge + roomSub,
           };
         }
-        const textColor = getTextColor(color);
-        const titleBadge = '<span class="event-badge" style="background:' + color + ';color:' + textColor + '">' + title + '</span>';
+        const titleBadge = '<span class="event-badge" style="background:' + color + ';color:#fff">' + title + '</span>';
         return {
-          html: '<span class="mev-dot" style="background-color:' + color + '"></span>' +
-                titleBadge + roomSub,
+          html: titleBadge + roomSub,
         };
       }
 
