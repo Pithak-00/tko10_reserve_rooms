@@ -82,32 +82,23 @@ document.addEventListener('DOMContentLoaded', function () {
       const reserver = (ep.reserved_by || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const isRakumo      = !!ep.is_rakumo;
       const isAlldayDisp  = !!ep.display_as_allday;
-      const rakumoBadge = '<span style="display:inline-block;background:#718096;color:#fff;font-size:13px;' +
-        'font-weight:700;padding:2px 7px;border-radius:3px;margin-right:3px;' +
-        'vertical-align:middle;line-height:1.4;">本社使用</span>';
+      const rakumoBadge = '<span class="rakumo-badge">本社使用</span>';
 
       if (arg.view.type === 'dayGridMonth') {
-        // 月ビュー：ドット + 時刻ラベル + (Rakumoならバッジのみ / 通常なら件名+予約者)
+        // 月ビュー：ドット + バッジ（時刻非表示・Rakumo/通常ともバッジスタイルで統一）
         const color = arg.event.backgroundColor || '#3182CE';
-        // 終日表示イベントは時刻の代わりに「終日」ラベルを出す
-        const label = isAlldayDisp ? '終日' : arg.timeText;
+        const roomSub = room ? '<span class="mev-sub">' + room + '</span>' : '';
         if (isRakumo) {
-          const roomSub = room ? '<span class="mev-sub">' + room + '</span>' : '';
           return {
             html: '<span class="mev-dot" style="background-color:' + color + '"></span>' +
-                  '<span class="mev-time">' + label + '</span>' +
                   rakumoBadge + roomSub,
           };
         }
-        const subParts = [room, reserver].filter(Boolean);
-        const sub = subParts.length
-          ? '<span class="mev-sub">' + subParts.join(' ／ ') + '</span>'
-          : '';
+        const textColor = getTextColor(color);
+        const titleBadge = '<span class="event-badge" style="background:' + color + ';color:' + textColor + '">' + title + '</span>';
         return {
           html: '<span class="mev-dot" style="background-color:' + color + '"></span>' +
-                '<span class="mev-time">' + label + '</span>' +
-                '<span class="mev-title">&nbsp;' + title + '</span>' +
-                sub,
+                titleBadge + roomSub,
         };
       }
 
