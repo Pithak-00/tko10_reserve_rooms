@@ -54,8 +54,10 @@
           </div>
         </div>
 
-        <form method="post" novalidate>
+        <form method="post" novalidate onsubmit="return confirm('予約内容を変更してもよろしいですか？');">
           {% csrf_token %}
+          <button type="submit">変更を保存する</button>
+        </form>>
 
           {% if form.non_field_errors %}
             <div class="rsv-non-field-error">
