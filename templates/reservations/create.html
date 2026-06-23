@@ -71,13 +71,9 @@
         const currentUserDeptId = "{{ request.user.department_id }}"; 
         const isUserStaff = "{{ request.user.is_staff }}" === "True";    
     </script>
-        <form method="post" novalidate onsubmit="return validateReservation();"></form>>
+        <form method="post" novalidate onsubmit="return validateReservation();">
           {% csrf_token %}
 
-          {{ form.as_p }}
-          <button type="submit" class="btn btn-primary">予約を確定する</button>
-        </form>
-        
         <script>
         function validateReservation() {if (!isUserStaff) {
         return true; 
@@ -116,6 +112,7 @@
                               data-capacity="{{ room.capacity }}"
                               data-facilities="{% for f in room.facilities.all %}{{ f.name }}{% if not forloop.last %}、{% endif %}{% endfor %}"
                               data-departments="{% for d in room.departments.all %}{{ d.name }}{% if not forloop.last %}、{% endif %}{% endfor %}"
+                              data-department-id="{{ room.departments.first.id|default:'' }}"
                               {% if form.room.value|stringformat:"s" == room.id|stringformat:"s" %}selected{% endif %}>
                         {{ room.name }}
                       </option>
