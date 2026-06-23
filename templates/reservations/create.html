@@ -66,8 +66,32 @@
           </div>
         </div>
 
-        <form method="post" novalidate>
+    <script>
+        // ログインユーザーの所属IDと管理者かどうかのフラグ（true/false）
+        const currentUserDeptId = "{{ request.user.department_id }}"; 
+        const isUserStaff = "{{ request.user.is_staff }}" === "True";    
+    </script>
+        <form method="post" novalidate onsubmit="return validateReservation();"></form>>
           {% csrf_token %}
+
+          {{ form.as_p }}
+          <button type="submit" class="btn btn-primary">予約を確定する</button>
+        </form>
+        
+        <script>
+        function validateReservation() {if (!isUserStaff) {
+        return true; 
+        }
+        const roomSelect = document.getElementById('id_room');
+        if (!roomSelect) return true;
+
+        const selectedRoomDeptId = roomSelect.options[roomSelect.selectedIndex].getAttribute('data-department-id');
+        if (selectedRoomDeptId && currentUserDeptId !== selectedRoomDeptId) {
+        return confirm('あなたが所属する部署とは異なる会議室ですが、本当に予約しますか？');
+        }
+      return true;
+      }
+    </script>
 
           {% if form.non_field_errors %}
             <div class="rsv-non-field-error">

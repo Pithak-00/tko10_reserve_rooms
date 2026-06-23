@@ -155,6 +155,11 @@ class ReservationForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        #面川追記
+        for room in self.fields['room'].queryset:
+            dept_id = room.departmentroom_set.first().department_id if room.departmentroom_set.exists() else ""
+            self.fields['room'].widget.create_option = self._custom_create_option(dept_id)
+        #面川追記
 
         self.fields["room"].queryset = Room.objects.filter(is_active=True)
 
