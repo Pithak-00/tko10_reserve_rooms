@@ -16,6 +16,7 @@ services:
       retries: 5
   django:
     image: ${APP_IMAGE}  # ECRからpullするイメージ（start_server.shが設定）
+    container_name: tko10-django
     ports:
       - "2222:22"
       - "80:8000"
