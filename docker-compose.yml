@@ -4,9 +4,9 @@ services:
     container_name: tko10-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       ${DB_NAME}
-      POSTGRES_USER:     ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}  # .env から読み込む（ハードコード禁止）
+      POSTGRES_DB:       tko10_db
+      POSTGRES_USER:     tko10_user
+      POSTGRES_PASSWORD: pg_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
