@@ -94,7 +94,6 @@ DATABASES = {
 }
 
 
-
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
@@ -171,15 +170,11 @@ GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get(
 # .env に GOOGLE_DELEGATED_ADMIN=xxx@yourdomain.com を設定してください
 GOOGLE_DELEGATED_ADMIN = os.environ.get('GOOGLE_DELEGATED_ADMIN', '')
 
-# qq python-dotenv で .env を読み込む（manage.py と同階層に.env）q
-# pip install python-dotenv
-# settings.py の先頭に追加:
-# from dotenv import load_dotenv
-# load_dotenv()
 CSRF_TRUSTED_ORIGINS = [
     origin for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if origin
 ]
 
-#TODO:ローカル環境で実行のため一旦コメントアウト
-#SESSION_COOKIE_SECURE = True   # セッション Cookie を HTTPS 専用に
-#CSRF_COOKIE_SECURE    = True   # CSRF Cookie も同様
+# ALBがHTTPSを受けている場合の必須設定
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = True   # セッション Cookie を HTTPS 専用に
+CSRF_COOKIE_SECURE    = True   # CSRF Cookie も同様
