@@ -15,11 +15,10 @@ services:
       timeout: 5s
       retries: 5
   django:
-    image: ${APP_IMAGE}  # ECRからpullするイメージ（start_server.shが設定）
+    build: .  # ECRイメージではなくDockerfileからビルド
     container_name: tko10-django
     ports:
-      - "2222:22"
-      - "80:8000"
+      - "8080:8080"  # 80:8000 から変更
     volumes:
       - .:/workspace
     env_file:
