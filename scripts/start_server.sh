@@ -44,14 +44,19 @@ aws ssm get-parameter \
   --query "Parameter.Value" \
   --output text > "$APP_DIR/credentials/service_account.json"
 
-# .envのSHUTDOWN_TIME_UTCを読み込んでcronを自動登録
+# .envのSHUTDOWN_TIME_UTCを読み込んでcronを自動登録（/etc/cron.d/でroot実行）
 echo "--- Registering shutdown cron ---"
 SHUTDOWN_TIME_UTC=$(grep '^SHUTDOWN_TIME_UTC=' "$APP_DIR/.env" | cut -d'=' -f2-)
-SHUTDOWN_HOUR=$(echo "$SHUTDOWN_TIME_UTC" | cut -d: -f1)
-SHUTDOWN_MIN=$(echo "$SHUTDOWN_TIME_UTC" | cut -d: -f2)
-CRON_JOB="${SHUTDOWN_MIN} ${SHUTDOWN_HOUR} * * * /home/ec2-user/app/scripts/shutdown_server.sh >> /var/log/tko10_shutdown.log 2>&1"
-(crontab -u ec2-user -l 2>/dev/null | grep -v shutdown_server.sh; echo "$CRON_JOB") | crontab -u ec2-user -
-echo "Cron registered: $CRON_JOB"
+if [ -n "$SHUTDOWN_TIME_UTC" ]; then
+  SHUTDOWN_HOUR=$(echo "$SHUTDOWN_TIME_UTC" | cut -d: -f1)
+  SHUTDOWN_MIN=$(echo "$SHUTDOWN_TIME_UTC" | cut -d: -f2)
+  echo "${SHUTDOWN_MIN} ${SHUTDOWN_HOUR} * * * root /home/ec2-user/app/scripts/shutdown_server.sh >> /var/log/tko10_shutdown.log 2>&1" \
+    | sudo tee /etc/cron.d/tko10-shutdown > /dev/null
+  sudo chmod 644 /etc/cron.d/tko10-shutdown
+  echo "Cron registered: ${SHUTDOWN_MIN} ${SHUTDOWN_HOUR} UTC daily"
+else
+  echo "SHUTDOWN_TIME_UTC not set, skipping cron registration"
+fi
 
 # ECRにログインしてイメージをpull
 echo "--- Pulling ECR image ---"
