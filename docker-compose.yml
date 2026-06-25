@@ -19,7 +19,8 @@ services:
     container_name: tko10-django
     ports:
       - "2222:22"
-      - "80:8000"
+    expose:
+      - "8000"
     volumes:
       - .:/workspace
     env_file:
@@ -31,5 +32,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    container_name: tko10-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - /var/log/nginx/healthd:/var/log/nginx/healthd
+    restart: unless-stopped
+    depends_on:
+      - django
+
 volumes:
   postgres_data:
