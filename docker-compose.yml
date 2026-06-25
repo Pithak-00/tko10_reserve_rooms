@@ -4,9 +4,9 @@ services:
     container_name: tko10-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       tko10_db
-      POSTGRES_USER:     tko10_user
-      POSTGRES_PASSWORD: pg_password
+      POSTGRES_DB:       ${DB_NAME}
+      POSTGRES_USER:     ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,10 +15,11 @@ services:
       timeout: 5s
       retries: 5
   django:
-    build: .  # ECRイメージではなくDockerfileからビルド
+    image: ${APP_IMAGE}
     container_name: tko10-django
     ports:
-      - "8080:8080"  # 80:8000 から変更
+      - "2222:22"
+      - "80:8000"
     volumes:
       - .:/workspace
     env_file:

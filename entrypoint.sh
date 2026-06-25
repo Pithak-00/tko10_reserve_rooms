@@ -13,4 +13,4 @@ fi
 python manage.py migrate
 python manage.py collectstatic --noinput
 
-exec python manage.py runserver 0.0.0.0:8080  # 8000 から変更
+exec python manage.py runserver 0.0.0.0:8000
