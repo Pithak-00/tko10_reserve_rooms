@@ -5,7 +5,7 @@ sleep 15
 
 # ホストOSの80番ポートを叩くことで、Dockerのマッピング経由で内部のDjango（8000番）に正しく着弾させる。
 # リダイレクト（302）を自動追跡（-L）する無敵仕様。
-STATUS_CODE=$(curl -s -o /dev/null -L -w "%{http_code}" http://localhost/)
+STATUS_CODE=$(curl -s -o /dev/null -L -w "%{http_code}" http://localhost:8080/)
 
 # 200(OK) または 302(Redirect) なら合格（Succeeded）とする
 if [ "$STATUS_CODE" -eq 200 ] || [ "$STATUS_CODE" -eq 302 ]; then
