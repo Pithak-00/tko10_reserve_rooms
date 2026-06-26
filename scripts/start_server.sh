@@ -75,11 +75,17 @@ sudo -E /usr/bin/docker compose up -d db
 # PostgreSQL起動待ち（最大60秒）
 echo "--- Waiting for PostgreSQL to be ready ---"
 for i in $(seq 1 30); do
+  # コンテナが起動していない場合はスキップ（exec_create/dieログ抑制）
+  if ! sudo docker ps --filter "name=tko10-postgres" --filter "status=running" -q | grep -q .; then
+    echo "Waiting for container to start... ($i/30)"
+    sleep 2
+    continue
+  fi
   if sudo docker exec tko10-postgres pg_isready -U tko10_user 2>/dev/null; then
     echo "PostgreSQL is ready"
     break
   fi
-  echo "Waiting... ($i/30)"
+  echo "Waiting for PostgreSQL... ($i/30)"
   sleep 2
 done
 
