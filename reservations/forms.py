@@ -186,6 +186,12 @@ class ReservationForm(forms.ModelForm):
                     end_at = timezone.localtime(end_at)
                 self.fields["end_time"].initial = end_at.strftime("%H:%M")
 
+    def clean_reserve_date(self):
+        reserve_date = self.cleaned_data.get("reserve_date")
+        if reserve_date and reserve_date < timezone.localdate():
+            raise ValidationError("過去の日付は選択できません")
+        return reserve_date
+
     def clean(self):
         cleaned_data = super().clean()
 
