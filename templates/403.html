@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>403 Forbidden | 会議室予約システム</title>
+    {% load static %}
+    <link rel="icon" type="image/webp" href="{% static 'image/bold-logo.webp' %}">
+    <link rel="stylesheet" href="{% static 'css/common.css' %}">
+  </head>
+  <body>
+    <div class="logo between">
+      <div class="header-logo">
+        <a href="/"><img src="{% static 'image/bold-logo.webp' %}" alt="logo"></a>
+        <span>社内会議室予約システム</span>
+      </div>
+    </div>
+    <div class="calendar-container" style="text-align:center; padding-top:80px;">
+      <h1 style="font-size:48px; font-weight:700; color:#e53e3e; margin-bottom:16px;">403</h1>
+      <p style="font-size:20px; font-weight:600; color:#1a202c; margin-bottom:8px;">アクセスが拒否されました</p>
+      <p style="font-size:14px; color:#4a5568; margin-bottom:32px;">このページにアクセスする権限がありません。</p>
+      <a href="/" class="btn btn-primary btn-md">トップページへ戻る</a>
+    </div>
+    <script src="{% static 'js/common.js' %}"></script>
+  </body>
+</html>
