@@ -54,9 +54,8 @@
           </div>
         </div>
 
-        <form method="post" novalidate onsubmit="return confirm('予約内容を変更してもよろしいですか？');">
+        <form method="post" novalidate id="editForm">
           {% csrf_token %}
-          <button type="submit">変更を保存する</button>
 
           {% if form.non_field_errors %}
             <div class="rsv-non-field-error">
@@ -130,10 +129,24 @@
           </div>
 
           <div class="actions">
-            <button type="submit" class="btn btn-primary btn-md">保存する</button>
+            <button type="button" class="btn btn-primary btn-md" id="openSaveModal">保存する</button>
             <a href="#" onclick="history.back(); return false;" class="btn btn-light btn-md">戻る</a>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- 編集確認モーダル -->
+    <div class="modal-overlay" id="saveConfirmModal" hidden>
+      <div class="cancel-modal">
+        <div class="cancel-modal-title">予約内容の変更確認</div>
+        <div class="cancel-modal-message">
+          予約内容を変更してもよろしいですか？
+        </div>
+        <div class="cancel-modal-actions">
+          <button type="button" class="btn btn-light btn-md" id="closeSaveModal">戻る</button>
+          <button type="button" class="btn btn-primary btn-md" id="confirmSave">保存する</button>
+        </div>
       </div>
     </div>
 
@@ -148,6 +161,16 @@
         }
         allDayChk.addEventListener('change', toggleTimeFields);
         toggleTimeFields();
+
+        document.getElementById('openSaveModal').addEventListener('click', function () {
+          document.getElementById('saveConfirmModal').hidden = false;
+        });
+        document.getElementById('closeSaveModal').addEventListener('click', function () {
+          document.getElementById('saveConfirmModal').hidden = true;
+        });
+        document.getElementById('confirmSave').addEventListener('click', function () {
+          document.getElementById('editForm').submit();
+        });
       }());
     </script>
   </body>

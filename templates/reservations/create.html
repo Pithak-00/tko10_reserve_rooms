@@ -75,18 +75,32 @@
           {% csrf_token %}
 
         <script>
-        function validateReservation() {if (!isUserStaff) {
-        return true; 
-        }
-        const roomSelect = document.getElementById('id_room');
-        if (!roomSelect) return true;
+        let _deptCheckPassed = false;
 
-        const selectedRoomDeptId = roomSelect.options[roomSelect.selectedIndex].getAttribute('data-department-id');
-        if (selectedRoomDeptId && currentUserDeptId !== selectedRoomDeptId) {
-        return confirm('あなたが所属する部署とは異なる会議室ですが、本当に予約しますか？');
+        function validateReservation() {
+          if (_deptCheckPassed) return true;
+
+          const roomSelect = document.getElementById('roomSelect');
+          if (!roomSelect) return true;
+
+          const selectedRoomDeptId = roomSelect.options[roomSelect.selectedIndex].getAttribute('data-department-id');
+          if (selectedRoomDeptId && currentUserDeptId !== selectedRoomDeptId) {
+            document.getElementById('deptConfirmModal').hidden = false;
+            return false;
+          }
+          return true;
         }
-      return true;
-      }
+
+        document.addEventListener('DOMContentLoaded', function () {
+          document.getElementById('deptModalBack').addEventListener('click', function () {
+            document.getElementById('deptConfirmModal').hidden = true;
+          });
+          document.getElementById('deptModalConfirm').addEventListener('click', function () {
+            _deptCheckPassed = true;
+            document.getElementById('deptConfirmModal').hidden = true;
+            document.querySelector('form[onsubmit]').submit();
+          });
+        });
     </script>
 
           {% if form.non_field_errors %}
@@ -189,6 +203,20 @@
             <a href="#" onclick="history.back(); return false;" class="btn btn-light btn-md">戻る</a>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- 所属外会議室 確認モーダル -->
+    <div class="modal-overlay" id="deptConfirmModal" hidden>
+      <div class="cancel-modal">
+        <div class="cancel-modal-title">別所属の会議室を予約</div>
+        <div class="cancel-modal-message">
+          あなたの所属と異なる会議室ですが、本当に予約しますか？
+        </div>
+        <div class="cancel-modal-actions">
+          <button type="button" class="btn btn-light btn-md" id="deptModalBack">戻る</button>
+          <button type="button" class="btn btn-primary btn-md" id="deptModalConfirm">予約する</button>
+        </div>
       </div>
     </div>
 

@@ -28,6 +28,8 @@ Thumbs.db
 
 # Docker
 *.pid
+docker-compose.override.yml
+logs/
 
 # サービスアカウントキー（絶対にコミットしない）
 credentials/

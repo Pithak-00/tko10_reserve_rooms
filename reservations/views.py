@@ -226,7 +226,7 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
                 local_start = localtime(res.start_at)
                 local_end   = localtime(res.end_at)
                 can_edit    = (res.user_id == self.request.user.pk or
-                               self.request.user.is_staff)
+                               self.request.user.is_staff) and timezone.localtime(res.start_at).date() >= timezone.localdate()
 
                 # Rakumoから同期した予約はグレー「本社使用」として表示
                 is_rakumo_db = res.is_rakumo_source
@@ -586,6 +586,11 @@ class ReservationDetailView(LoginRequiredMixin, DetailView):
     template_name = "reservations/detail.html"
     context_object_name = "reservation"
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["is_past"] = timezone.localtime(self.object.start_at).date() < timezone.localdate()
+        return context
+
 
 class ReservationUpdateView(LoginRequiredMixin, UpdateView):
     model = Reservation
@@ -600,6 +605,8 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
         reservation = self.get_object()
         if reservation.user != request.user and not request.user.is_staff:
             return HttpResponseForbidden("この予約を編集する権限がありません")
+        if timezone.localtime(reservation.start_at).date() < timezone.localdate():
+            return HttpResponseForbidden("過去の予約は編集できません")
         return super().dispatch(request, *args, **kwargs)
 
     def get_form(self, form_class=None):
@@ -812,10 +819,11 @@ class CalendarEventsAPI(LoginRequiredMixin, View):
             qs = qs.filter(user_id__in=user_ids)
 
         tz_local = timezone.get_current_timezone()
+        today = timezone.localdate()
         events = []
         for res in qs:
             color    = res.color or '#3182CE'
-            can_edit = res.user == request.user or request.user.is_staff
+            can_edit = (res.user == request.user or request.user.is_staff) and timezone.localtime(res.start_at).date() >= today
             if res.is_all_day:
                 # 終日予約はメイングリッドで 08:00〜22:00 として表示
                 day      = localtime(res.start_at).date()

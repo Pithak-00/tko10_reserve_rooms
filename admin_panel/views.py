@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import ListView, CreateView, UpdateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.core.exceptions import PermissionDenied
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
 from django.core.paginator import Paginator
@@ -31,6 +32,13 @@ class StaffRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
 
     def test_func(self):
         return self.request.user.is_staff
+
+    def handle_no_permission(self):
+        # 認証済みユーザーが権限不足の場合は必ず 403 を返す
+        if self.request.user.is_authenticated:
+            raise PermissionDenied("この操作には管理者権限が必要です")
+        # 未認証ユーザーはログインページへリダイレクト
+        return super().handle_no_permission()
 
 
 def _annotate_rooms(rooms):

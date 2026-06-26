@@ -9,22 +9,6 @@ BOOKING_HOUR_START = 8   # 予約可能開始時刻（時）
 BOOKING_HOUR_END   = 22  # 予約可能終了時刻（時）
 
 
-def time_choices(start_hour: int = BOOKING_HOUR_START,
-                 end_hour: int   = BOOKING_HOUR_END) -> list:
-    """start_hour:00 〜 end_hour:00 を 15 分刻みで返す"""
-    choices = []
-    current = datetime(2000, 1, 1, start_hour, 0)
-    end     = datetime(2000, 1, 1, end_hour, 0)
-
-    while current <= end:
-        value = current.strftime("%H:%M")
-        label = f"{current.hour}:{current.strftime('%M')}"
-        choices.append((value, label))
-        current += timedelta(minutes=15)
-
-    return choices
-
-
 class RoomForm(forms.ModelForm):
     """会議室登録・編集フォーム（F-18）"""
 
@@ -84,22 +68,30 @@ class ReservationForm(forms.ModelForm):
         ),
     )
 
-    start_time = forms.ChoiceField(
+    start_time = forms.TimeField(
         label="開始時刻",
-        choices=time_choices(),
-        widget=forms.Select(
+        input_formats=["%H:%M"],
+        widget=forms.TimeInput(
             attrs={
-                "class": "form-select",
+                "class": "form-control",
+                "type": "time",
+                "step": "60",
+                "min": f"{BOOKING_HOUR_START:02d}:00",
+                "max": f"{BOOKING_HOUR_END:02d}:00",
             }
         ),
     )
 
-    end_time = forms.ChoiceField(
+    end_time = forms.TimeField(
         label="終了時刻",
-        choices=time_choices(),
-        widget=forms.Select(
+        input_formats=["%H:%M"],
+        widget=forms.TimeInput(
             attrs={
-                "class": "form-select",
+                "class": "form-control",
+                "type": "time",
+                "step": "60",
+                "min": f"{BOOKING_HOUR_START:02d}:00",
+                "max": f"{BOOKING_HOUR_END:02d}:00",
             }
         ),
     )
@@ -186,6 +178,12 @@ class ReservationForm(forms.ModelForm):
                     end_at = timezone.localtime(end_at)
                 self.fields["end_time"].initial = end_at.strftime("%H:%M")
 
+    def clean_reserve_date(self):
+        reserve_date = self.cleaned_data.get("reserve_date")
+        if reserve_date and reserve_date < timezone.localdate():
+            raise ValidationError("過去の日付は選択できません")
+        return reserve_date
+
     def clean(self):
         cleaned_data = super().clean()
 
@@ -211,10 +209,10 @@ class ReservationForm(forms.ModelForm):
                 return cleaned_data
 
             start = timezone.make_aware(
-                datetime.strptime(f"{reserve_date} {start_time}", "%Y-%m-%d %H:%M"), tz
+                datetime.combine(reserve_date, start_time), tz
             )
             end = timezone.make_aware(
-                datetime.strptime(f"{reserve_date} {end_time}", "%Y-%m-%d %H:%M"), tz
+                datetime.combine(reserve_date, end_time), tz
             )
 
             if start >= end:
@@ -251,7 +249,7 @@ class ReservationForm(forms.ModelForm):
             if exclude_pk:
                 exists = exists.exclude(pk=exclude_pk)
             if exists.exists():
-                raise ValidationError("その時間帯は既に予約されています")
+                raise ValidationError("予約時間が重複しています。別の時間帯を選択してください")
 
             # ② 終日予約との重複チェック
             #    終日予約は 00:00〜00:30 で保存されるため通常の重複検知に引っかからない
