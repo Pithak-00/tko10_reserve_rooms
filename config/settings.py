@@ -176,5 +176,5 @@ CSRF_TRUSTED_ORIGINS = [
 
 # ALBがHTTPSを受けている場合の必須設定
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SESSION_COOKIE_SECURE = True   # セッション Cookie を HTTPS 専用に
-CSRF_COOKIE_SECURE    = True   # CSRF Cookie も同様
+SESSION_COOKIE_SECURE = not DEBUG  # 本番(DEBUG=False)はHTTPS専用、ローカルはHTTP許可
+CSRF_COOKIE_SECURE    = not DEBUG  # 本番(DEBUG=False)はHTTPS専用、ローカルはHTTP許可
