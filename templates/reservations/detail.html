@@ -100,9 +100,11 @@
 
         {% if not reservation.is_cancelled %}
         <div class="actions">
-          {% if reservation.user == request.user or request.user.is_staff %}
-          <a href="{% url 'reservation_edit' reservation.pk %}" class="btn btn-primary btn-md">編集する</a>
-          <button type="button" class="btn btn-danger btn-md" id="openCancelModal">予約をキャンセル</button>
+          {% if not is_past %}
+            {% if reservation.user == request.user or request.user.is_staff %}
+            <a href="{% url 'reservation_edit' reservation.pk %}" class="btn btn-primary btn-md">編集する</a>
+            <button type="button" class="btn btn-danger btn-md" id="openCancelModal">予約をキャンセル</button>
+            {% endif %}
           {% endif %}
           <a href="#" onclick="history.back(); return false;" class="btn btn-light btn-md">戻る</a>
         </div>
