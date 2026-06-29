@@ -154,6 +154,7 @@
         <a href="{% url 'reservation_create' %}" class="btn btn-primary btn-md">＋ 新しい予約を作成する</a>
       </div>
     </div>
+    {% if toast %}<div class="toast show">{{ toast }}</div>{% endif %}
     <script src="{% static 'js/common.js' %}"></script>
     <script>
     // Google 同期トグル

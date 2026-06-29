@@ -422,8 +422,15 @@ function saveSelectedRoomIds(ids) {
 
 // ページロード時：localStorage の選択状態をチェックボックス UI に反映
 (function restoreCheckboxState() {
-  const saved  = localStorage.getItem(STORAGE_KEY);
   const allIds = getRoomIds();
+
+  // URL に room_id パラメータがあれば、その会議室だけに絞り込む
+  const urlRoomId = parseInt(new URLSearchParams(location.search).get('room_id'));
+  if (urlRoomId && allIds.includes(urlRoomId)) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([urlRoomId]));
+  }
+
+  const saved  = localStorage.getItem(STORAGE_KEY);
 
   let savedIds;
   if (saved === null) {
