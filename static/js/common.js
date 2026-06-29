@@ -33,18 +33,18 @@ document.addEventListener('click', function (e) {
 
 /* ── トースト自動非表示 ── */
 document.addEventListener("DOMContentLoaded", function () {
-  const toast = document.querySelector(".toast.show");
-  if (!toast) return;
+  // querySelectorAll で複数トーストすべてに適用（Django messages 複数表示対応）
+  document.querySelectorAll(".toast.show").forEach(function (toast) {
+    toast.addEventListener("click", function () {
+      toast.classList.add("hide");
+      setTimeout(function () { toast.remove(); }, 500);
+    });
 
-  toast.addEventListener("click", function () {
-    toast.classList.add("hide");
-    setTimeout(function () { toast.remove(); }, 500);
+    setTimeout(function () {
+      toast.classList.add("hide");
+      setTimeout(function () { toast.remove(); }, 500);
+    }, 3000);
   });
-
-  setTimeout(function () {
-    toast.classList.add("hide");
-    setTimeout(function () { toast.remove(); }, 500);
-  }, 3000);
 });
 
 /* ── カスタム確認ダイアログ（window.confirm の代替） ──
@@ -203,6 +203,8 @@ function showToast(msg, type = 'success') {
   t.style.backgroundColor = type === 'error' ? '#dc3545' : '#2E75B6';
   t.textContent = msg;
   document.body.appendChild(t);
+  // クリックでも閉じられるようにする
+  t.addEventListener('click', () => { t.classList.add('hide'); setTimeout(() => t.remove(), 500); });
   setTimeout(() => { t.classList.add('hide'); setTimeout(() => t.remove(), 500); }, 3000);
 }
 
@@ -216,8 +218,13 @@ function showUndoToast(msg, onUndo) {
   document.body.appendChild(t);
   const btn = t.querySelector('button');
   let done = false;
-  btn.addEventListener('click', () => { if (!done) { done = true; onUndo(); t.remove(); } });
-  setTimeout(() => { if (!done) { t.classList.add('hide'); setTimeout(() => t.remove(), 500); } }, 5000);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!done) { done = true; onUndo(); t.remove(); }
+  });
+  // トースト本体クリックで閉じる（ボタン以外の部分）
+  t.addEventListener('click', () => { if (!done) { done = true; t.classList.add('hide'); setTimeout(() => t.remove(), 500); } });
+  setTimeout(() => { if (!done) { done = true; t.classList.add('hide'); setTimeout(() => t.remove(), 500); } }, 5000);
 }
 
 // 日付フォーマット（例：5月14日(水) 10:00）

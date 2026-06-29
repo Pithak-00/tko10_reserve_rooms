@@ -137,6 +137,7 @@
       </div>
     </div>
 
+    {% if toast %}<div class="toast show">{{ toast }}</div>{% endif %}
     <script src="{% static 'js/common.js' %}"></script>
     <script src="{% static 'js/reservations.js' %}"></script>
     <script>

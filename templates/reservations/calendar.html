@@ -237,6 +237,7 @@
   {% if messages %}{% for message in messages %}
     <div class="toast show">{{ message }}</div>
   {% endfor %}{% endif %}
+  {% if toast %}<div class="toast show">{{ toast }}</div>{% endif %}
 
   <script src="{% static 'js/common.js' %}"></script>
   <script src="{% static 'js/calendar.js' %}"></script>

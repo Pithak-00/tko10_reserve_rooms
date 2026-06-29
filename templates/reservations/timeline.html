@@ -198,6 +198,9 @@
     </div>
   </div>
 
+  <!-- セッショントースト（Django session） -->
+  {% if toast %}<div class="toast show">{{ toast }}</div>{% endif %}
+
   <!-- トースト通知 -->
   <div id="tlToast" class="tl-toast" hidden></div>
 

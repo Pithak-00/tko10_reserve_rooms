@@ -174,6 +174,7 @@ class CalendarView(LoginRequiredMixin, TemplateView):
                 'week': 'timeGridWeek',
                 'month': 'dayGridMonth',
             }.get(view, 'timeGridWeek'),
+            'toast': self.request.session.pop('toast', None),
         })
         return ctx
 
@@ -384,6 +385,7 @@ class ReservationTimelineView(LoginRequiredMixin, TemplateView):
             'prev_month_date': prev_month_date,
             'next_month_date': next_month_date,
             'weekday_names':   ['月', '火', '水', '木', '金', '土', '日'],
+            'toast':           self.request.session.pop('toast', None),
         })
         return ctx
 
@@ -435,6 +437,7 @@ class MyReservationListView(LoginRequiredMixin, ListView):
             context["google_connected"]    = False
             context["google_sync_enabled"] = False
 
+        context["toast"] = self.request.session.pop("toast", None)
         return context
 
 
@@ -589,6 +592,7 @@ class ReservationDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["is_past"] = timezone.localtime(self.object.start_at).date() < timezone.localdate()
+        context["toast"] = self.request.session.pop("toast", None)
         return context
 
 
@@ -740,6 +744,7 @@ def reservation_cancel(request, pk):
         RakumoSyncService().delete_event(reservation)
     except Exception as e:
         logger.warning(f'Rakumo sync on cancel failed: {e}')
+    request.session['toast'] = '予約をキャンセルしました'
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'calendar'
     return redirect(next_url)
 
