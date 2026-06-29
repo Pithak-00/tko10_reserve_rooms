@@ -423,13 +423,6 @@ function saveSelectedRoomIds(ids) {
 // ページロード時：localStorage の選択状態をチェックボックス UI に反映
 (function restoreCheckboxState() {
   const allIds = getRoomIds();
-
-  // URL に room_id パラメータがあれば、その会議室だけに絞り込む
-  const urlRoomId = parseInt(new URLSearchParams(location.search).get('room_id'));
-  if (urlRoomId && allIds.includes(urlRoomId)) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([urlRoomId]));
-  }
-
   const saved  = localStorage.getItem(STORAGE_KEY);
 
   let savedIds;
@@ -444,6 +437,14 @@ function saveSelectedRoomIds(ids) {
       savedIds = savedIds.concat(newIds);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(savedIds));
     }
+  }
+
+  // URL に room_id パラメータがあれば、通常の復元結果を上書きして1室のみに絞り込む
+  // ※ 新規会議室の自動追加処理より後に実行することで上書きが確実に反映される
+  const urlRoomId = parseInt(new URLSearchParams(location.search).get('room_id'));
+  if (urlRoomId && allIds.includes(urlRoomId)) {
+    savedIds = [urlRoomId];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedIds));
   }
 
   const isAll = savedIds.length === allIds.length;
