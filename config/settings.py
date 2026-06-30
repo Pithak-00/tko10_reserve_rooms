@@ -147,15 +147,6 @@ LOGOUT_REDIRECT_URL = "/accounts/login/"
 # ユーザーモデル
 AUTH_USER_MODEL = "accounts.User"
 
-# Google OAuth 2.0（個人カレンダー同期用・既存機能）
-GOOGLE_CLIENT_ID     = os.environ.get('GOOGLE_CLIENT_ID', '')
-GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
-GOOGLE_REDIRECT_URI  = os.environ.get(
-    'GOOGLE_REDIRECT_URI',
-    'http://localhost/reservations/auth/google/callback/'
-)
-GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events']
-
 # ─────────────────────────────────────────────────────────
 # Rakumo連携: サービスアカウント認証（ドメイン全体委任）
 # ─────────────────────────────────────────────────────────

@@ -6,10 +6,10 @@ User = settings.AUTH_USER_MODEL
 
 
 # ──────────────────────────────────────────────
-# T-02 建物マスタ
+# T-04 建物マスタ
 # ──────────────────────────────────────────────
 class Building(models.Model):
-    """建物マスタ (T-02)"""
+    """建物マスタ (T-04)"""
 
     name = models.CharField(max_length=100, unique=True, verbose_name="建物名称")
     created_at = models.DateTimeField(default=timezone.now, verbose_name="作成日時")
@@ -24,10 +24,10 @@ class Building(models.Model):
 
 
 # ──────────────────────────────────────────────
-# T-04 設備マスタ
+# T-05 設備マスタ
 # ──────────────────────────────────────────────
 class Facility(models.Model):
-    """設備マスタ (T-04)"""
+    """設備マスタ (T-05)"""
 
     name = models.CharField(max_length=100, unique=True, verbose_name="設備名称")
     created_at = models.DateTimeField(default=timezone.now, verbose_name="作成日時")
@@ -42,10 +42,10 @@ class Facility(models.Model):
 
 
 # ──────────────────────────────────────────────
-# T-05 会議室マスタ
+# T-06 会議室マスタ
 # ──────────────────────────────────────────────
 class Room(models.Model):
-    """会議室マスタ (T-05)"""
+    """会議室マスタ (T-06)"""
 
     name = models.CharField(max_length=100, unique=True, verbose_name="室名")
     capacity = models.PositiveIntegerField(verbose_name="収容人数")
@@ -68,7 +68,7 @@ class Room(models.Model):
         help_text="例: xxxxx@resource.calendar.google.com"
     )
 
-    # T-06 room_facilities を経由した設備との M2N
+    # T-07 room_facilities を経由した設備との M2N
     facilities = models.ManyToManyField(
         Facility,
         through="RoomFacility",
@@ -76,7 +76,7 @@ class Room(models.Model):
         verbose_name="設備",
     )
 
-    # T-07 department_rooms を経由した所属との M2N
+    # T-08 department_rooms を経由した所属との M2N
     departments = models.ManyToManyField(
         "accounts.Department",
         through="DepartmentRoom",
@@ -94,10 +94,10 @@ class Room(models.Model):
 
 
 # ──────────────────────────────────────────────
-# T-06 会議室設備中間テーブル
+# T-07 会議室設備中間テーブル
 # ──────────────────────────────────────────────
 class RoomFacility(models.Model):
-    """会議室と設備の M:N 中間テーブル (T-06)
+    """会議室と設備の M:N 中間テーブル (T-07)
     room 削除時は CASCADE で連鎖削除される。
     """
 
@@ -125,10 +125,10 @@ class RoomFacility(models.Model):
 
 
 # ──────────────────────────────────────────────
-# T-07 所属別会議室テーブル
+# T-08 所属別会議室テーブル
 # ──────────────────────────────────────────────
 class DepartmentRoom(models.Model):
-    """所属ごとのカレンダー初期表示対象会議室マッピング (T-07)
+    """所属ごとのカレンダー初期表示対象会議室マッピング (T-08)
     room 削除時は CASCADE で連鎖削除される。
     """
 
@@ -156,7 +156,7 @@ class DepartmentRoom(models.Model):
 
 
 # ──────────────────────────────────────────────
-# T-08 予約
+# T-09 予約
 # ──────────────────────────────────────────────
 class Reservation(models.Model):
     room = models.ForeignKey(
@@ -202,12 +202,6 @@ class Reservation(models.Model):
         related_name='recurrence_instances',
         verbose_name='親予約'
     )
-    # 【追加 F-04-R09】Google カレンダー同期（個人カレンダー）
-    google_event_id = models.CharField(
-        max_length=255, blank=True, default='',
-        verbose_name='Google カレンダーイベントID'
-    )
-
     # Rakumo連携: リソースカレンダーのイベントID
     rakumo_event_id = models.CharField(
         max_length=255, blank=True, default='',
@@ -232,7 +226,7 @@ class Reservation(models.Model):
 
 
 # ──────────────────────────────────────────────
-# 操作ログ
+# T-10 操作ログ
 # ──────────────────────────────────────────────
 class OperationLog(models.Model):
     """予約操作ログ"""
