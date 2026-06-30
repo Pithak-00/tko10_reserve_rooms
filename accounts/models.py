@@ -7,7 +7,6 @@ from django.contrib.auth.models import (
 )
 
 from config import settings
-from django.conf import settings as django_settings
 
 
 class Department(models.Model):
@@ -149,28 +148,3 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_staff(self):
         return self.role == "admin"
-
-
-class UserGoogleToken(models.Model):
-    user = models.OneToOneField(
-        django_settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='google_token',
-        verbose_name='ユーザー'
-    )
-    access_token  = models.TextField(verbose_name='アクセストークン')
-    refresh_token = models.TextField(verbose_name='リフレッシュトークン')
-    token_expiry  = models.DateTimeField(null=True, blank=True,
-                       verbose_name='有効期限')
-    sync_enabled  = models.BooleanField(default=True,
-                       verbose_name='同期有効')
-    created_at    = models.DateTimeField(auto_now_add=True)
-    updated_at    = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'user_google_tokens'
-        verbose_name = 'Google トークン'
-        verbose_name_plural = 'Google トークン'
-
-    def __str__(self):
-        return f'{self.user} - sync={self.sync_enabled}'

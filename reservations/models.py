@@ -202,12 +202,6 @@ class Reservation(models.Model):
         related_name='recurrence_instances',
         verbose_name='親予約'
     )
-    # 【追加 F-04-R09】Google カレンダー同期（個人カレンダー）
-    google_event_id = models.CharField(
-        max_length=255, blank=True, default='',
-        verbose_name='Google カレンダーイベントID'
-    )
-
     # Rakumo連携: リソースカレンダーのイベントID
     rakumo_event_id = models.CharField(
         max_length=255, blank=True, default='',

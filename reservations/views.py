@@ -19,30 +19,11 @@ from django.db import transaction
 
 from .models import Room, Reservation, Facility, Building, RoomFacility, DepartmentRoom, OperationLog
 from .forms import ReservationForm
-from accounts.models import Department, User, UserGoogleToken
-try:
-    from .services.google_sync import GoogleSyncService
-    GOOGLE_SYNC_AVAILABLE = True
-except ImportError:
-    GOOGLE_SYNC_AVAILABLE = False
-    class GoogleSyncService:
-        """google-api-python-client 未インストール時のダミー"""
-        def __init__(self, user): pass
-        def create_event(self, r): pass
-        def update_event(self, r): pass
-        def delete_event(self, r): pass
+from accounts.models import Department, User
 
 from .services.rakumo_sync import RakumoSyncService
 
 logger = logging.getLogger(__name__)
-
-# google_auth_oauthlib は F-04-R09 Google 同期機能でのみ使用
-# pip install google-auth-oauthlib google-api-python-client python-dateutil が必要
-try:
-    from google_auth_oauthlib.flow import Flow
-    GOOGLE_OAUTH_AVAILABLE = True
-except ImportError:
-    GOOGLE_OAUTH_AVAILABLE = False
 
 try:
     from dateutil.rrule import rrulestr
@@ -428,15 +409,6 @@ class MyReservationListView(LoginRequiredMixin, ListView):
             user=self.request.user, start_at__lt=now
         ).count()
 
-        # Google カレンダー連携状態
-        try:
-            token = self.request.user.google_token
-            context["google_connected"]    = True
-            context["google_sync_enabled"] = token.sync_enabled
-        except UserGoogleToken.DoesNotExist:
-            context["google_connected"]    = False
-            context["google_sync_enabled"] = False
-
         context["toast"] = self.request.session.pop("toast", None)
         return context
 
@@ -571,7 +543,6 @@ class ReservationCreateView(CreateView):
                 f"色: {color_str}"
             ),
         )
-        GoogleSyncService(self.request.user).create_event(reservation)
         # Rakumo自動連携（このシステム → Rakumo）
         try:
             RakumoSyncService().create_event(reservation)
@@ -695,10 +666,6 @@ class ReservationUpdateView(LoginRequiredMixin, UpdateView):
             diff_parts.append(f"色: 「{old_color}」→「{new_color}」")
         detail = " / ".join(diff_parts) if diff_parts else "変更なし"
         _log_operation(self.request, OperationLog.ACTION_UPDATE, self.object, detail=detail)
-        try:
-            GoogleSyncService(self.request.user).update_event(self.object)
-        except Exception as e:
-            logger.warning(f'Google sync on update failed: {e}')
         # Rakumo自動連携（このシステム → Rakumo）
         try:
             RakumoSyncService().update_event(self.object)
@@ -734,11 +701,6 @@ def reservation_cancel(request, pk):
         cancel_detail = f"管理者（{request.user.name}）による代理キャンセル"
     _log_operation(request, OperationLog.ACTION_CANCEL, reservation, detail=cancel_detail)
 
-    # Google カレンダーのイベントも削除
-    try:
-        GoogleSyncService(request.user).delete_event(reservation)
-    except Exception as e:
-        logger.warning(f'Google sync on cancel failed: {e}')
     # Rakumo自動連携（このシステム → Rakumo）
     try:
         RakumoSyncService().delete_event(reservation)
@@ -1041,11 +1003,6 @@ class ReservationMoveView(LoginRequiredMixin, View):
         move_detail = " / ".join(move_parts) if move_parts else "変更なし"
         _log_operation(request, OperationLog.ACTION_MOVE, reservation, detail=move_detail)
 
-        # Google カレンダー同期
-        try:
-            GoogleSyncService(request.user).update_event(reservation)
-        except Exception as e:
-            logger.warning(f'Google sync failed: {e}')
         # Rakumo自動連携（このシステム → Rakumo）
         try:
             RakumoSyncService().update_event(reservation)
@@ -1055,113 +1012,3 @@ class ReservationMoveView(LoginRequiredMixin, View):
         color = reservation.color or '#3182CE'
         return JsonResponse({'id': reservation.id, 'color': color}, status=200)
     
-
-# ─────────────────────────────────────────────────────────────
-# Google OAuth 2.0 ビュー
-# ─────────────────────────────────────────────────────────────
-
-@login_required
-def google_oauth_start(request):
-    """Google OAuth 認証画面へリダイレクト"""
-    if not GOOGLE_OAUTH_AVAILABLE:
-        return HttpResponse('google-auth-oauthlib が未インストールです。pip install google-auth-oauthlib を実行してください。', status=501)
-
-    import secrets, hashlib, base64
-    code_verifier = secrets.token_urlsafe(64)
-    code_challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(code_verifier.encode('ascii')).digest()
-    ).rstrip(b'=').decode('ascii')
-
-    flow = Flow.from_client_config(
-        {
-            'web': {
-                'client_id': settings.GOOGLE_CLIENT_ID,
-                'client_secret': settings.GOOGLE_CLIENT_SECRET,
-                'redirect_uris': [settings.GOOGLE_REDIRECT_URI],
-                'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
-                'token_uri': 'https://oauth2.googleapis.com/token',
-            }
-        },
-        scopes=settings.GOOGLE_CALENDAR_SCOPES,
-    )
-    flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
-    auth_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent',
-        code_challenge=code_challenge,
-        code_challenge_method='S256',
-    )
-    request.session['google_oauth_state'] = state
-    request.session['google_code_verifier'] = code_verifier
-    return redirect(auth_url)
-
-
-@login_required
-def google_oauth_callback(request):
-    """Google からのコールバック：トークンを取得して保存"""
-    if not GOOGLE_OAUTH_AVAILABLE:
-        return HttpResponse('google-auth-oauthlib が未インストールです。', status=501)
-    state = request.GET.get('state')
-    if state != request.session.get('google_oauth_state'):
-        return HttpResponseBadRequest('Invalid state parameter')
-
-    flow = Flow.from_client_config(
-        {
-            'web': {
-                'client_id': settings.GOOGLE_CLIENT_ID,
-                'client_secret': settings.GOOGLE_CLIENT_SECRET,
-                'redirect_uris': [settings.GOOGLE_REDIRECT_URI],
-                'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
-                'token_uri': 'https://oauth2.googleapis.com/token',
-            }
-        },
-        scopes=settings.GOOGLE_CALENDAR_SCOPES,
-        state=state,
-    )
-    flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
-    code_verifier = request.session.pop('google_code_verifier', '')
-    flow.fetch_token(code=request.GET.get('code'), code_verifier=code_verifier)
-    creds = flow.credentials
-
-    # UserGoogleToken に保存（or 更新）
-    expiry = None
-    if creds.expiry:
-        expiry = creds.expiry.replace(tzinfo=dt_tz.utc)
-    UserGoogleToken.objects.update_or_create(
-        user=request.user,
-        defaults={
-            'access_token':  creds.token,
-            'refresh_token': creds.refresh_token or '',
-            'token_expiry':  expiry,
-            'sync_enabled':  True,
-        }
-    )
-    request.session['toast'] = 'Google カレンダーと連携しました'
-    return redirect('calendar')
-
-
-class google_oauth_disconnect(LoginRequiredMixin, View):
-    def post(self, request):
-        """連携解除：トークンを revoke して削除"""
-        import requests as req_lib
-        try:
-            token_obj = request.user.google_token
-            req_lib.post('https://oauth2.googleapis.com/revoke',
-                params={'token': token_obj.access_token}, timeout=5)
-            token_obj.delete()
-        except UserGoogleToken.DoesNotExist:
-            pass
-        return JsonResponse({'status': 'ok'})
-
-
-class google_sync_toggle(LoginRequiredMixin, View):
-    def patch(self, request):
-        """同期 ON/OFF 切り替え"""
-        try:
-            token_obj = request.user.google_token
-            token_obj.sync_enabled = not token_obj.sync_enabled
-            token_obj.save(update_fields=['sync_enabled'])
-            return JsonResponse({'sync_enabled': token_obj.sync_enabled})
-        except UserGoogleToken.DoesNotExist:
-            return JsonResponse({'error': 'Not connected'}, status=404)

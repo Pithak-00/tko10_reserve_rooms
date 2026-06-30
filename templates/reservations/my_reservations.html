@@ -26,60 +26,6 @@
         </div>
       </div>
 
-      <!-- ===== Google カレンダー連携カード ===== -->
-      <div class="google-sync-card">
-        <div class="google-sync-header">
-          <!-- Google アイコン -->
-          <svg class="google-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-          </svg>
-          <span class="google-sync-title">Google カレンダー連携</span>
-          {% if google_connected %}
-            <span class="google-sync-badge connected">連携中</span>
-          {% else %}
-            <span class="google-sync-badge disconnected">未連携</span>
-          {% endif %}
-        </div>
-
-        {% if google_connected %}
-          <p class="google-sync-desc">
-            このシステムで作成・編集・キャンセルした予約が、あなたの Google カレンダーに自動で反映されます。
-          </p>
-          <div class="google-sync-actions">
-            <label class="sync-toggle-wrap">
-              <span class="sync-toggle-label">自動同期</span>
-              <label class="toggle-switch">
-                <input type="checkbox" id="google-sync-toggle"
-                       {% if google_sync_enabled %}checked{% endif %}>
-                <span class="toggle-slider"></span>
-              </label>
-              <span class="sync-status-text" id="sync-status-label">
-                {% if google_sync_enabled %}同期中{% else %}一時停止中{% endif %}
-              </span>
-            </label>
-            <button type="button" id="google-disconnect-btn"
-                    class="btn btn-sm btn-outline-danger">連携を解除</button>
-          </div>
-        {% else %}
-          <p class="google-sync-desc">
-            Google アカウントと連携すると、予約の作成・編集・キャンセルが Google カレンダーに自動で同期されます。
-          </p>
-          <a href="{% url 'google_oauth_start' %}" class="btn-google-connect">
-            <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
-              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-            </svg>
-            Google アカウントで連携する
-          </a>
-        {% endif %}
-      </div>
-      <!-- ===== /Google カレンダー連携カード ===== -->
-
       <div class="tab-bar">
         <a href="?tab=upcoming"
            class="tab-btn {% if active_tab == 'upcoming' %}active{% endif %}">
@@ -156,42 +102,5 @@
     </div>
     {% if toast %}<div class="toast show">{{ toast }}</div>{% endif %}
     <script src="{% static 'js/common.js' %}"></script>
-    <script>
-    // Google 同期トグル
-    document.getElementById('google-sync-toggle')?.addEventListener('change', function () {
-      fetch('/reservations/auth/google/sync-toggle/', {
-        method: 'PATCH',
-        headers: {
-          'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      })
-      .then(r => r.json())
-      .then(data => {
-        const label = document.getElementById('sync-status-label');
-        if (label) label.textContent = data.sync_enabled ? '同期中' : '一時停止中';
-        showToast(data.sync_enabled ? 'Google 同期を有効にしました' : 'Google 同期を一時停止しました');
-      })
-      .catch(() => showToast('エラーが発生しました', 'error'));
-    });
-
-    // Google 連携解除
-    document.getElementById('google-disconnect-btn')?.addEventListener('click', function () {
-      showConfirm(
-        'Google カレンダーとの連携を解除しますか？\n解除後は新規予約の同期が停止されます。',
-        () => {
-          fetch('/reservations/auth/google/disconnect/', {
-            method: 'POST',
-            headers: {
-              'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '',
-            },
-          })
-          .then(r => { if (r.ok) location.reload(); })
-          .catch(() => showToast('連携解除に失敗しました', 'error'));
-        }
-      );
-    });
-    </script>
   </body>
 </html>
